@@ -1,0 +1,6 @@
+oc-find-waste
+/dist/
+vendor/
+*.test
+*.out
+.testcache/
