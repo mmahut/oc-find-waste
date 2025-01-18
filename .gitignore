@@ -1,4 +1,4 @@
-oc-find-waste
+/oc-find-waste
 /dist/
 vendor/
 *.test
