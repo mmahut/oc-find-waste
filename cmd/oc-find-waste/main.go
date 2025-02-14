@@ -1,10 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/mmahut/oc-find-waste/internal/report"
+	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
 
 func main() {
@@ -69,9 +75,98 @@ func newScanCmd() *cobra.Command {
 }
 
 func runScan(opts *scanOptions) error {
-	if opts.verbose {
-		fmt.Fprintln(os.Stderr, "no scanners registered")
+	ctx := context.Background()
+
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if opts.kubeconfig != "" {
+		loadingRules.ExplicitPath = opts.kubeconfig
 	}
-	fmt.Println("✓ No idle resources found.")
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	restConfig, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return fmt.Errorf("building kubeconfig: %w", err)
+	}
+
+	ns := opts.namespace
+	if ns == "" {
+		var err2 error
+		ns, _, err2 = kubeConfig.Namespace()
+		if err2 != nil {
+			return fmt.Errorf("resolving namespace: %w", err2)
+		}
+	}
+
+	client, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("creating kubernetes client: %w", err)
+	}
+
+	allScanners := []scanner.Scanner{
+		scanner.NewScaledToZero(client),
+	}
+	enabled := filterScanners(allScanners, opts.only, opts.skip)
+
+	var findings []scanner.Finding
+	hadErr := false
+
+	for _, s := range enabled {
+		if opts.verbose {
+			fmt.Fprintf(os.Stderr, "running scanner: %s\n", s.Name())
+		}
+		ff, scanErr := s.Scan(ctx, ns)
+		if scanErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: scanner %s: %v\n", s.Name(), scanErr)
+			hadErr = true
+			continue
+		}
+		findings = append(findings, ff...)
+	}
+
+	reportOpts := report.Options{
+		Namespace: ns,
+		Window:    opts.window,
+		Pricing:   opts.pricing,
+		NoColor:   opts.noColor,
+		Output:    opts.output,
+	}
+	if err := report.Render(os.Stdout, findings, reportOpts); err != nil {
+		return fmt.Errorf("rendering report: %w", err)
+	}
+
+	if hadErr {
+		os.Exit(1)
+	}
 	return nil
+}
+
+func filterScanners(all []scanner.Scanner, only, skip []string) []scanner.Scanner {
+	if len(only) > 0 {
+		onlySet := make(map[string]bool, len(only))
+		for _, n := range only {
+			onlySet[n] = true
+		}
+		var result []scanner.Scanner
+		for _, s := range all {
+			if onlySet[s.Name()] {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	if len(skip) > 0 {
+		skipSet := make(map[string]bool, len(skip))
+		for _, n := range skip {
+			skipSet[n] = true
+		}
+		var result []scanner.Scanner
+		for _, s := range all {
+			if !skipSet[s.Name()] {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return all
 }
