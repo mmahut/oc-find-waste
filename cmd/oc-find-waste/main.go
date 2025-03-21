@@ -105,6 +105,8 @@ func runScan(opts *scanOptions) error {
 
 	allScanners := []scanner.Scanner{
 		scanner.NewScaledToZero(client),
+		scanner.NewCompletedJobs(client),
+		scanner.NewOrphanedPVCs(client),
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)
 
