@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	osappsv1 "github.com/openshift/api/apps/v1"
+	osappsfake "github.com/openshift/client-go/apps/clientset/versioned/fake"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -86,7 +88,7 @@ func TestScaledToZero(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := fake.NewSimpleClientset(tt.objects...)
-			s := scanner.NewScaledToZero(client)
+			s := scanner.NewScaledToZero(client, nil) // nil = no OCP
 			findings, err := s.Scan(context.Background(), "test")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -106,4 +108,62 @@ func TestScaledToZero(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScaledToZero_OpenShift(t *testing.T) {
+	longAgo := metav1.NewTime(time.Now().Add(-10 * 24 * time.Hour))
+
+	t.Run("dc scaled to zero — finding", func(t *testing.T) {
+		k8sClient := fake.NewSimpleClientset()
+		ocpClient := osappsfake.NewSimpleClientset(
+			&osappsv1.DeploymentConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "idle-dc", Namespace: "test",
+					CreationTimestamp: longAgo,
+				},
+				Spec: osappsv1.DeploymentConfigSpec{Replicas: 0},
+			},
+		)
+		s := scanner.NewScaledToZero(k8sClient, ocpClient)
+		findings, err := s.Scan(context.Background(), "test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(findings) != 1 {
+			t.Fatalf("got %d findings, want 1", len(findings))
+		}
+		if findings[0].Kind != "DeploymentConfig" {
+			t.Errorf("kind: got %q, want DeploymentConfig", findings[0].Kind)
+		}
+	})
+
+	t.Run("dc running — no finding", func(t *testing.T) {
+		k8sClient := fake.NewSimpleClientset()
+		ocpClient := osappsfake.NewSimpleClientset(
+			&osappsv1.DeploymentConfig{
+				ObjectMeta: metav1.ObjectMeta{Name: "active-dc", Namespace: "test"},
+				Spec:       osappsv1.DeploymentConfigSpec{Replicas: 3},
+			},
+		)
+		s := scanner.NewScaledToZero(k8sClient, ocpClient)
+		findings, err := s.Scan(context.Background(), "test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("got %d findings, want 0", len(findings))
+		}
+	})
+
+	t.Run("nil appsClient — no dc scanning", func(t *testing.T) {
+		k8sClient := fake.NewSimpleClientset()
+		s := scanner.NewScaledToZero(k8sClient, nil)
+		findings, err := s.Scan(context.Background(), "test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("got %d findings, want 0", len(findings))
+		}
+	})
 }

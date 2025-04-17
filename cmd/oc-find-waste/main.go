@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 
+	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/mmahut/oc-find-waste/internal/ocp"
 	"github.com/mmahut/oc-find-waste/internal/report"
 	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
@@ -75,6 +78,7 @@ func newScanCmd() *cobra.Command {
 }
 
 func runScan(opts *scanOptions) error {
+	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 	ctx := context.Background()
 
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
@@ -103,8 +107,21 @@ func runScan(opts *scanOptions) error {
 		return fmt.Errorf("creating kubernetes client: %w", err)
 	}
 
+	var appsClient osappsv1client.Interface
+	if ocp.IsOpenShift(client.Discovery()) {
+		if opts.verbose {
+			fmt.Fprintln(os.Stderr, "OpenShift APIs detected")
+		}
+		appsClient, err = ocp.NewAppsClient(restConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift apps client: %v\n", err)
+		}
+	} else {
+		ocp.LogIfNotOpenShift(opts.verbose)
+	}
+
 	allScanners := []scanner.Scanner{
-		scanner.NewScaledToZero(client),
+		scanner.NewScaledToZero(client, appsClient),
 		scanner.NewCompletedJobs(client),
 		scanner.NewOrphanedPVCs(client),
 	}
