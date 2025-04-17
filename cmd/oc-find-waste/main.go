@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
+	"time"
 
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
 	"github.com/spf13/cobra"
@@ -77,9 +80,31 @@ func newScanCmd() *cobra.Command {
 	return cmd
 }
 
+var dayRe = regexp.MustCompile(`(\d+)d`)
+
+// parseWindow accepts Go durations plus a "d" suffix for days (e.g. "7d", "1d12h").
+func parseWindow(s string) (time.Duration, error) {
+	expanded := dayRe.ReplaceAllStringFunc(s, func(m string) string {
+		n, _ := strconv.Atoi(dayRe.FindStringSubmatch(m)[1])
+		return fmt.Sprintf("%dh", n*24)
+	})
+	d, err := time.ParseDuration(expanded)
+	if err != nil {
+		return 0, fmt.Errorf("invalid --window %q: use a Go duration or days suffix (e.g. 7d, 24h, 1d12h)", s)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("--window must be positive, got %q", s)
+	}
+	return d, nil
+}
+
 func runScan(opts *scanOptions) error {
 	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 	ctx := context.Background()
+
+	if _, err := parseWindow(opts.window); err != nil {
+		return err
+	}
 
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if opts.kubeconfig != "" {
