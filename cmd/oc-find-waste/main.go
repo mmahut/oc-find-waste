@@ -9,6 +9,8 @@ import (
 	"time"
 
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
+	osbuildv1client "github.com/openshift/client-go/build/clientset/versioned"
+	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -133,6 +135,8 @@ func runScan(opts *scanOptions) error {
 	}
 
 	var appsClient osappsv1client.Interface
+	var imageClient osimagev1client.Interface
+	var buildClient osbuildv1client.Interface
 	if ocp.IsOpenShift(client.Discovery()) {
 		if opts.verbose {
 			fmt.Fprintln(os.Stderr, "OpenShift APIs detected")
@@ -140,6 +144,14 @@ func runScan(opts *scanOptions) error {
 		appsClient, err = ocp.NewAppsClient(restConfig)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift apps client: %v\n", err)
+		}
+		imageClient, err = ocp.NewImageClient(restConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift image client: %v\n", err)
+		}
+		buildClient, err = ocp.NewBuildClient(restConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift build client: %v\n", err)
 		}
 	} else {
 		ocp.LogIfNotOpenShift(opts.verbose)
@@ -149,6 +161,7 @@ func runScan(opts *scanOptions) error {
 		scanner.NewScaledToZero(client, appsClient),
 		scanner.NewCompletedJobs(client),
 		scanner.NewOrphanedPVCs(client),
+		scanner.NewUnusedImageStreams(client, imageClient, buildClient),
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)
 

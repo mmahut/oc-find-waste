@@ -5,6 +5,8 @@ import (
 	"os"
 
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
+	osbuildv1client "github.com/openshift/client-go/build/clientset/versioned"
+	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 )
@@ -28,6 +30,24 @@ func NewAppsClient(cfg *rest.Config) (osappsv1client.Interface, error) {
 	c, err := osappsv1client.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating openshift apps client: %w", err)
+	}
+	return c, nil
+}
+
+// NewImageClient constructs an OpenShift image clientset from a rest.Config.
+func NewImageClient(cfg *rest.Config) (osimagev1client.Interface, error) {
+	c, err := osimagev1client.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating openshift image client: %w", err)
+	}
+	return c, nil
+}
+
+// NewBuildClient constructs an OpenShift build clientset from a rest.Config.
+func NewBuildClient(cfg *rest.Config) (osbuildv1client.Interface, error) {
+	c, err := osbuildv1client.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating openshift build client: %w", err)
 	}
 	return c, nil
 }
