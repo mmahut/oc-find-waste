@@ -2,6 +2,7 @@ package scanner_test
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/mmahut/oc-find-waste/internal/pricing"
 	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
 
@@ -97,7 +99,7 @@ func TestOrphanedPVCs(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := fake.NewSimpleClientset(tt.objects...)
-			s := scanner.NewOrphanedPVCs(client)
+			s := scanner.NewOrphanedPVCs(client, nil)
 			findings, err := s.Scan(context.Background(), "test")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -111,5 +113,47 @@ func TestOrphanedPVCs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOrphanedPVCs_Cost(t *testing.T) {
+	profile, err := pricing.Load("aws")
+	if err != nil {
+		t.Fatalf("loading aws profile: %v", err)
+	}
+
+	client := fake.NewSimpleClientset(boundPVC("big-data", "50Gi"))
+	s := scanner.NewOrphanedPVCs(client, profile)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	// 50 GiB * $0.08/GiB/month = $4.00
+	want := 50 * 0.08
+	if math.Abs(findings[0].MonthlyCost-want) > 0.001 {
+		t.Errorf("MonthlyCost = %.4f, want %.4f", findings[0].MonthlyCost, want)
+	}
+}
+
+func TestOrphanedPVCs_OnPremNoCost(t *testing.T) {
+	profile, err := pricing.Load("on-prem")
+	if err != nil {
+		t.Fatalf("loading on-prem profile: %v", err)
+	}
+
+	client := fake.NewSimpleClientset(boundPVC("big-data", "50Gi"))
+	s := scanner.NewOrphanedPVCs(client, profile)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	if findings[0].MonthlyCost != 0 {
+		t.Errorf("on-prem MonthlyCost = %.4f, want 0", findings[0].MonthlyCost)
 	}
 }

@@ -1,0 +1,5 @@
+name: azure-default
+description: "Rough Standard_D2s_v3 / Premium SSD LRS equivalents, East US"
+cpu_core_hour: 0.0480
+memory_gb_hour: 0.0064
+pvc_gb_month: 0.095

@@ -7,14 +7,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+
+	"github.com/mmahut/oc-find-waste/internal/pricing"
 )
 
 type orphanedPVCsScanner struct {
-	client kubernetes.Interface
+	client  kubernetes.Interface
+	pricing *pricing.Profile // nil means no cost estimate
 }
 
-func NewOrphanedPVCs(client kubernetes.Interface) Scanner {
-	return &orphanedPVCsScanner{client: client}
+// NewOrphanedPVCs creates a scanner for Bound PVCs not mounted by any Pod.
+// Pass nil for profile to omit cost estimates.
+func NewOrphanedPVCs(client kubernetes.Interface, profile *pricing.Profile) Scanner {
+	return &orphanedPVCsScanner{client: client, pricing: profile}
 }
 
 func (s *orphanedPVCsScanner) Name() string { return "orphaned-pvcs" }
@@ -25,7 +30,6 @@ func (s *orphanedPVCsScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		return nil, fmt.Errorf("listing pvcs: %w", err)
 	}
 
-	// Only care about Bound PVCs.
 	bound := make(map[string]corev1.PersistentVolumeClaim)
 	for i := range pvcs.Items {
 		pvc := &pvcs.Items[i]
@@ -42,7 +46,6 @@ func (s *orphanedPVCsScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		return nil, fmt.Errorf("listing pods: %w", err)
 	}
 
-	// Collect all PVC names referenced by any pod.
 	mounted := make(map[string]bool)
 	for i := range pods.Items {
 		for _, vol := range pods.Items[i].Spec.Volumes {
@@ -58,13 +61,21 @@ func (s *orphanedPVCsScanner) Scan(ctx context.Context, namespace string) ([]Fin
 			continue
 		}
 		storageQty := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
+		sizeGiB := float64(storageQty.Value()) / (1 << 30)
+
+		var monthlyCost float64
+		if s.pricing != nil {
+			monthlyCost = s.pricing.PVCMonthlyUSD(sizeGiB)
+		}
+
 		findings = append(findings, Finding{
-			Kind:       "PersistentVolumeClaim",
-			Namespace:  namespace,
-			Name:       name,
-			Reason:     fmt.Sprintf("bound but unmounted (%s)", storageQty.String()),
-			Severity:   SeverityWarning,
-			Suggestion: "if data is no longer needed, delete the PVC to release storage",
+			Kind:        "PersistentVolumeClaim",
+			Namespace:   namespace,
+			Name:        name,
+			Reason:      fmt.Sprintf("bound but unmounted (%s)", storageQty.String()),
+			MonthlyCost: monthlyCost,
+			Severity:    SeverityWarning,
+			Suggestion:  "if data is no longer needed, delete the PVC to release storage",
 		})
 	}
 	return findings, nil

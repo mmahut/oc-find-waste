@@ -17,6 +17,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/mmahut/oc-find-waste/internal/ocp"
+	"github.com/mmahut/oc-find-waste/internal/pricing"
 	"github.com/mmahut/oc-find-waste/internal/report"
 	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
@@ -108,6 +109,11 @@ func runScan(opts *scanOptions) error {
 		return err
 	}
 
+	pricingProfile, err := pricing.Load(opts.pricing)
+	if err != nil {
+		return fmt.Errorf("loading pricing profile: %w", err)
+	}
+
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if opts.kubeconfig != "" {
 		loadingRules.ExplicitPath = opts.kubeconfig
@@ -160,7 +166,7 @@ func runScan(opts *scanOptions) error {
 	allScanners := []scanner.Scanner{
 		scanner.NewScaledToZero(client, appsClient),
 		scanner.NewCompletedJobs(client),
-		scanner.NewOrphanedPVCs(client),
+		scanner.NewOrphanedPVCs(client, pricingProfile),
 		scanner.NewUnusedImageStreams(client, imageClient, buildClient),
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)

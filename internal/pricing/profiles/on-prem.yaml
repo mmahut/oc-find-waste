@@ -1,0 +1,5 @@
+name: on-prem
+description: "On-premises — no dollar cost model; all values zero"
+cpu_core_hour: 0
+memory_gb_hour: 0
+pvc_gb_month: 0

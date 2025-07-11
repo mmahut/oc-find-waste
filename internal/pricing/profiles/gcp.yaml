@@ -1,0 +1,5 @@
+name: gcp-default
+description: "Rough n2-standard-2 / pd-balanced equivalents, us-central1"
+cpu_core_hour: 0.0470
+memory_gb_hour: 0.0063
+pvc_gb_month: 0.040

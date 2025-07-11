@@ -1,0 +1,5 @@
+name: aws-default
+description: "Rough m5.large / gp3 equivalents, us-east-1"
+cpu_core_hour: 0.0416
+memory_gb_hour: 0.0056
+pvc_gb_month: 0.08
