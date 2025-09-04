@@ -18,6 +18,7 @@ import (
 
 	"github.com/mmahut/oc-find-waste/internal/ocp"
 	"github.com/mmahut/oc-find-waste/internal/pricing"
+	"github.com/mmahut/oc-find-waste/internal/prom"
 	"github.com/mmahut/oc-find-waste/internal/report"
 	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
@@ -161,6 +162,20 @@ func runScan(opts *scanOptions) error {
 		}
 	} else {
 		ocp.LogIfNotOpenShift(opts.verbose)
+	}
+
+	// Extract bearer token for Prometheus (same token the kube client uses).
+	bearerToken := restConfig.BearerToken
+
+	// Look up the external thanos-querier Route so workstation users don't need --prometheus-url.
+	var thanosRouteURL string
+	if appsClient != nil { // only on OpenShift
+		thanosRouteURL = ocp.ThanosRouteURL(ctx, restConfig)
+	}
+
+	promClient := prom.Discover(ctx, opts.prometheusURL, thanosRouteURL, bearerToken)
+	if opts.verbose && promClient != nil {
+		fmt.Fprintln(os.Stderr, "Prometheus endpoint reachable")
 	}
 
 	allScanners := []scanner.Scanner{

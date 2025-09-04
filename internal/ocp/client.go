@@ -1,12 +1,15 @@
 package ocp
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
 	osbuildv1client "github.com/openshift/client-go/build/clientset/versioned"
 	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
+	osroutev1client "github.com/openshift/client-go/route/clientset/versioned"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 )
@@ -50,6 +53,23 @@ func NewBuildClient(cfg *rest.Config) (osbuildv1client.Interface, error) {
 		return nil, fmt.Errorf("creating openshift build client: %w", err)
 	}
 	return c, nil
+}
+
+// ThanosRouteURL looks up the external thanos-querier Route in openshift-monitoring
+// and returns the https URL, or "" if not found.
+func ThanosRouteURL(ctx context.Context, cfg *rest.Config) string {
+	rc, err := osroutev1client.NewForConfig(cfg)
+	if err != nil {
+		return ""
+	}
+	route, err := rc.RouteV1().Routes("openshift-monitoring").Get(ctx, "thanos-querier", metav1.GetOptions{})
+	if err != nil {
+		return ""
+	}
+	if route.Spec.Host == "" {
+		return ""
+	}
+	return "https://" + route.Spec.Host
 }
 
 // LogIfNotOpenShift prints a verbose note to stderr when OCP APIs are absent.
