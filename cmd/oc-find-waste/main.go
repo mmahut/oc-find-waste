@@ -106,7 +106,8 @@ func runScan(opts *scanOptions) error {
 	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 	ctx := context.Background()
 
-	if _, err := parseWindow(opts.window); err != nil {
+	window, err := parseWindow(opts.window)
+	if err != nil {
 		return err
 	}
 
@@ -183,6 +184,7 @@ func runScan(opts *scanOptions) error {
 		scanner.NewCompletedJobs(client),
 		scanner.NewOrphanedPVCs(client, pricingProfile),
 		scanner.NewUnusedImageStreams(client, imageClient, buildClient),
+		scanner.NewOverProvisioned(client, promClient, pricingProfile, window),
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)
 
