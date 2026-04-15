@@ -55,6 +55,15 @@ func NewBuildClient(cfg *rest.Config) (osbuildv1client.Interface, error) {
 	return c, nil
 }
 
+// NewRouteClient constructs an OpenShift route clientset from a rest.Config.
+func NewRouteClient(cfg *rest.Config) (osroutev1client.Interface, error) {
+	c, err := osroutev1client.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating openshift route client: %w", err)
+	}
+	return c, nil
+}
+
 // ThanosRouteURL looks up the external thanos-querier Route in openshift-monitoring
 // and returns the https URL, or "" if not found.
 func ThanosRouteURL(ctx context.Context, cfg *rest.Config) string {

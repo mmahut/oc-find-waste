@@ -11,6 +11,7 @@ import (
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
 	osbuildv1client "github.com/openshift/client-go/build/clientset/versioned"
 	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
+	osroutev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -145,6 +146,7 @@ func runScan(opts *scanOptions) error {
 	var appsClient osappsv1client.Interface
 	var imageClient osimagev1client.Interface
 	var buildClient osbuildv1client.Interface
+	var routeClient osroutev1client.Interface
 	if ocp.IsOpenShift(client.Discovery()) {
 		if opts.verbose {
 			fmt.Fprintln(os.Stderr, "OpenShift APIs detected")
@@ -160,6 +162,10 @@ func runScan(opts *scanOptions) error {
 		buildClient, err = ocp.NewBuildClient(restConfig)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift build client: %v\n", err)
+		}
+		routeClient, err = ocp.NewRouteClient(restConfig)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not create OpenShift route client: %v\n", err)
 		}
 	} else {
 		ocp.LogIfNotOpenShift(opts.verbose)
@@ -185,6 +191,7 @@ func runScan(opts *scanOptions) error {
 		scanner.NewOrphanedPVCs(client, pricingProfile),
 		scanner.NewUnusedImageStreams(client, imageClient, buildClient),
 		scanner.NewOverProvisioned(client, promClient, pricingProfile, window),
+		scanner.NewUnusedRoutes(routeClient, promClient, window),
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)
 
