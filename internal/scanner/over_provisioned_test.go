@@ -266,3 +266,38 @@ func TestFmtHelpers(t *testing.T) {
 	}
 	_ = math.Pi // keep math import if needed later
 }
+
+func TestOverProvisioned_Patch(t *testing.T) {
+	// Single container pod: patch should name the container and set suggested requests.
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{"web-pod": 0.18},      // 180m
+		mem: map[string]float64{"web-pod": 629145600}, // 600Mi
+	}
+
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	patch := findings[0].Patch
+	if patch == "" {
+		t.Fatal("Patch is empty")
+	}
+	if !strings.Contains(patch, "kubectl patch") {
+		t.Errorf("Patch missing kubectl command: %q", patch)
+	}
+	if !strings.Contains(patch, "name: app") {
+		t.Errorf("Patch missing container name: %q", patch)
+	}
+	if !strings.Contains(patch, "cpu:") {
+		t.Errorf("Patch missing cpu field: %q", patch)
+	}
+	if !strings.Contains(patch, "memory:") {
+		t.Errorf("Patch missing memory field: %q", patch)
+	}
+}

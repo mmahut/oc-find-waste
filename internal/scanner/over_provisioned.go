@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +19,12 @@ const (
 	overProvisionedThreshold = 0.30 // p95 below 30% of request = over-provisioned
 	minPodAge                = 24 * time.Hour
 )
+
+type containerReq struct {
+	name    string
+	reqCPUm int64 // millicores
+	reqMemB int64 // bytes
+}
 
 type overProvisionedScanner struct {
 	k8sClient kubernetes.Interface
@@ -74,10 +81,11 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		p95Mem float64 // bytes
 	}
 	type ownerEntry struct {
-		kind     string
-		name     string
-		replicas int32
-		stats    podStats
+		kind       string
+		name       string
+		replicas   int32
+		stats      podStats
+		containers []containerReq
 	}
 	owners := make(map[string]*ownerEntry)
 
@@ -89,13 +97,18 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 
 		var reqCPUm int64 // millicores
 		var reqMemB int64 // bytes
+		var containers []containerReq
 		for _, c := range pod.Spec.Containers {
+			cr := containerReq{name: c.Name}
 			if q, ok := c.Resources.Requests[corev1.ResourceCPU]; ok {
-				reqCPUm += q.MilliValue()
+				cr.reqCPUm = q.MilliValue()
+				reqCPUm += cr.reqCPUm
 			}
 			if q, ok := c.Resources.Requests[corev1.ResourceMemory]; ok {
-				reqMemB += q.Value()
+				cr.reqMemB = q.Value()
+				reqMemB += cr.reqMemB
 			}
+			containers = append(containers, cr)
 		}
 		if reqCPUm == 0 && reqMemB == 0 {
 			continue
@@ -117,7 +130,8 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		if _, seen := owners[key]; !seen {
 			owners[key] = &ownerEntry{
 				kind: kind, name: name, replicas: replicas,
-				stats: podStats{reqCPU: reqCPU, reqMem: reqMem, p95CPU: p95CPU, p95Mem: p95Mem},
+				stats:      podStats{reqCPU: reqCPU, reqMem: reqMem, p95CPU: p95CPU, p95Mem: p95Mem},
+				containers: containers,
 			}
 		}
 	}
@@ -154,6 +168,8 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			}
 		}
 
+		patch := buildRightsizePatch(o.kind, o.name, namespace, sugCPU, sugMem, o.containers, st.reqCPU, st.reqMem)
+
 		findings = append(findings, Finding{
 			Kind:        o.kind,
 			Namespace:   namespace,
@@ -162,6 +178,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			Detail:      detail,
 			MonthlyCost: monthlyCost,
 			Suggestion:  suggestion,
+			Patch:       patch,
 			Severity:    SeverityWarning,
 		})
 	}
@@ -203,6 +220,52 @@ func (s *overProvisionedScanner) resolveOwner(ctx context.Context, pod *corev1.P
 		}
 	}
 	return "Pod", pod.Name, 1
+}
+
+// buildRightsizePatch generates a kubectl strategic-merge-patch YAML for the
+// suggested resource requests, distributing them proportionally across containers.
+func buildRightsizePatch(kind, name, namespace string, sugCPU, sugMem float64, containers []containerReq, totalReqCPU, totalReqMem float64) string {
+	// Convert totals back to millicores/bytes for ratio math.
+	totalReqCPUm := int64(math.Round(totalReqCPU * 1000))
+	totalReqMemB := int64(totalReqMem)
+
+	// Determine YAML path: Pod uses spec.containers, everything else spec.template.spec.containers.
+	isPod := kind == "Pod"
+	kindLower := strings.ToLower(kind)
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# kubectl patch %s %s -n %s --type strategic --patch-file /dev/stdin\n", kindLower, name, namespace)
+	fmt.Fprintln(&sb, "spec:")
+	if !isPod {
+		fmt.Fprintln(&sb, "  template:")
+		fmt.Fprintln(&sb, "    spec:")
+		fmt.Fprintln(&sb, "      containers:")
+	} else {
+		fmt.Fprintln(&sb, "  containers:")
+	}
+
+	indent := "      "
+	if isPod {
+		indent = "  "
+	}
+
+	for _, c := range containers {
+		fmt.Fprintf(&sb, "%s- name: %s\n", indent, c.name)
+		fmt.Fprintf(&sb, "%s  resources:\n", indent)
+		fmt.Fprintf(&sb, "%s    requests:\n", indent)
+
+		if c.reqCPUm > 0 && totalReqCPUm > 0 {
+			share := float64(c.reqCPUm) / float64(totalReqCPUm)
+			perContainer := math.Ceil(sugCPU*share*1000) / 1000
+			fmt.Fprintf(&sb, "%s      cpu: %q\n", indent, fmtCPU(perContainer))
+		}
+		if c.reqMemB > 0 && totalReqMemB > 0 {
+			share := float64(c.reqMemB) / float64(totalReqMemB)
+			perContainer := math.Ceil(sugMem*share/(1<<20)) * (1 << 20)
+			fmt.Fprintf(&sb, "%s      memory: %q\n", indent, fmtMem(perContainer))
+		}
+	}
+	return sb.String()
 }
 
 // fmtCPU formats cores as millicores (e.g. 0.18 → "180m", 2.0 → "2000m").

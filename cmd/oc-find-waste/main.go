@@ -217,6 +217,7 @@ func runScan(opts *scanOptions) error {
 		Pricing:   opts.pricing,
 		NoColor:   opts.noColor,
 		Output:    opts.output,
+		Rightsize: opts.rightsize,
 	}
 	if err := report.Render(os.Stdout, findings, reportOpts); err != nil {
 		return fmt.Errorf("rendering report: %w", err)

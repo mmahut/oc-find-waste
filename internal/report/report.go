@@ -18,6 +18,7 @@ type Options struct {
 	Pricing   string
 	NoColor   bool
 	Output    string // "text" or "json"
+	Rightsize bool   // print patch YAML after the report summary
 }
 
 // Render writes the report for findings to w.
@@ -105,6 +106,22 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 			pct := 100.0
 			fmt.Fprintf(w, "Potential savings:       %s  (%.0f%%)\n",
 				cost(fmt.Sprintf("$%.2f", savingsCost)), pct)
+		}
+	}
+
+	if opts.Rightsize {
+		var patches []scanner.Finding
+		for _, f := range findings {
+			if f.Patch != "" {
+				patches = append(patches, f)
+			}
+		}
+		if len(patches) > 0 {
+			fmt.Fprintln(w)
+			fmt.Fprintln(w, bold("# Suggested resource patches"))
+			for _, f := range patches {
+				fmt.Fprintf(w, "\n%s\n", f.Patch)
+			}
 		}
 	}
 
