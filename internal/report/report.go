@@ -13,12 +13,13 @@ import (
 
 // Options controls how the report is rendered.
 type Options struct {
-	Namespace string
-	Window    string
-	Pricing   string
-	NoColor   bool
-	Output    string // "text" or "json"
-	Rightsize bool   // print patch YAML after the report summary
+	Namespace     string
+	AllNamespaces bool
+	Window        string
+	Pricing       string
+	NoColor       bool
+	Output        string // "text" or "json"
+	Rightsize     bool   // print patch YAML after the report summary
 }
 
 // Render writes the report for findings to w.
@@ -49,7 +50,11 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	cost := color.New(color.FgYellow).SprintFunc()
 	good := color.New(color.FgGreen, color.Bold).SprintFunc()
 
-	fmt.Fprintf(w, "Scanning namespace: %s\n", bold(opts.Namespace))
+	if opts.AllNamespaces {
+		fmt.Fprintf(w, "Scanning all namespaces\n")
+	} else {
+		fmt.Fprintf(w, "Scanning namespace: %s\n", bold(opts.Namespace))
+	}
 	fmt.Fprintf(w, "Window: %s  │  Pricing: %s\n\n", opts.Window, opts.Pricing)
 
 	if len(findings) == 0 {
@@ -57,38 +62,14 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 		return nil
 	}
 
-	// Group findings by Kind, preserving insertion order.
-	var kinds []string
-	byKind := make(map[string][]scanner.Finding)
-	for _, f := range findings {
-		if _, seen := byKind[f.Kind]; !seen {
-			kinds = append(kinds, f.Kind)
-		}
-		byKind[f.Kind] = append(byKind[f.Kind], f)
-	}
-
-	for _, k := range kinds {
-		fmt.Fprintln(w, bold(k))
-		for i, f := range byKind[k] {
-			line := fmt.Sprintf("  %-30s %s", f.Name, f.Reason)
-			if f.MonthlyCost > 0 {
-				line += fmt.Sprintf("  %s", cost(fmt.Sprintf("$%.2f/mo", f.MonthlyCost)))
-			}
-			fmt.Fprintln(w, line)
-			if f.Detail != "" {
-				fmt.Fprintln(w, dim("    "+f.Detail))
-			}
-			if f.Suggestion != "" {
-				fmt.Fprintln(w, "    "+arrow("→")+" "+f.Suggestion)
-			}
-			if i < len(byKind[k])-1 {
-				fmt.Fprintln(w)
-			}
-		}
-		fmt.Fprintln(w)
+	if opts.AllNamespaces {
+		renderTextByNamespace(w, findings, bold, dim, arrow, cost)
+	} else {
+		renderTextByKind(w, findings, bold, dim, arrow, cost)
 	}
 
 	sep := strings.Repeat("─", 45)
+
 	fmt.Fprintln(w, sep)
 
 	var totalCost, savingsCost float64
@@ -126,4 +107,56 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	}
 
 	return nil
+}
+
+type colorFunc func(a ...interface{}) string
+
+func renderTextByKind(w io.Writer, findings []scanner.Finding, bold, dim, arrow, cost colorFunc) {
+	var kinds []string
+	byKind := make(map[string][]scanner.Finding)
+	for _, f := range findings {
+		if _, seen := byKind[f.Kind]; !seen {
+			kinds = append(kinds, f.Kind)
+		}
+		byKind[f.Kind] = append(byKind[f.Kind], f)
+	}
+	for _, k := range kinds {
+		fmt.Fprintln(w, bold(k))
+		printFindings(w, byKind[k], dim, arrow, cost)
+		fmt.Fprintln(w)
+	}
+}
+
+func renderTextByNamespace(w io.Writer, findings []scanner.Finding, bold, dim, arrow, cost colorFunc) {
+	var namespaces []string
+	byNS := make(map[string][]scanner.Finding)
+	for _, f := range findings {
+		if _, seen := byNS[f.Namespace]; !seen {
+			namespaces = append(namespaces, f.Namespace)
+		}
+		byNS[f.Namespace] = append(byNS[f.Namespace], f)
+	}
+	for _, ns := range namespaces {
+		fmt.Fprintln(w, bold("Namespace: "+ns))
+		renderTextByKind(w, byNS[ns], bold, dim, arrow, cost)
+	}
+}
+
+func printFindings(w io.Writer, findings []scanner.Finding, dim, arrow, cost colorFunc) {
+	for i, f := range findings {
+		line := fmt.Sprintf("  %-30s %s", f.Name, f.Reason)
+		if f.MonthlyCost > 0 {
+			line += fmt.Sprintf("  %s", cost(fmt.Sprintf("$%.2f/mo", f.MonthlyCost)))
+		}
+		fmt.Fprintln(w, line)
+		if f.Detail != "" {
+			fmt.Fprintln(w, dim("    "+f.Detail))
+		}
+		if f.Suggestion != "" {
+			fmt.Fprintln(w, "    "+arrow("→")+" "+f.Suggestion)
+		}
+		if i < len(findings)-1 {
+			fmt.Fprintln(w)
+		}
+	}
 }

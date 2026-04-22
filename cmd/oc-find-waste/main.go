@@ -13,6 +13,7 @@ import (
 	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
 	osroutev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/spf13/cobra"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -129,8 +130,12 @@ func runScan(opts *scanOptions) error {
 		return fmt.Errorf("building kubeconfig: %w", err)
 	}
 
+	if opts.allNamespaces && opts.namespace != "" {
+		return fmt.Errorf("--namespace and --all-namespaces are mutually exclusive")
+	}
+
 	ns := opts.namespace
-	if ns == "" {
+	if !opts.allNamespaces && ns == "" {
 		var err2 error
 		ns, _, err2 = kubeConfig.Namespace()
 		if err2 != nil {
@@ -195,29 +200,46 @@ func runScan(opts *scanOptions) error {
 	}
 	enabled := filterScanners(allScanners, opts.only, opts.skip)
 
+	// Build the list of namespaces to scan.
+	var namespaces []string
+	if opts.allNamespaces {
+		nsList, err := client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return fmt.Errorf("listing namespaces: %w", err)
+		}
+		for i := range nsList.Items {
+			namespaces = append(namespaces, nsList.Items[i].Name)
+		}
+	} else {
+		namespaces = []string{ns}
+	}
+
 	var findings []scanner.Finding
 	hadErr := false
 
-	for _, s := range enabled {
-		if opts.verbose {
-			fmt.Fprintf(os.Stderr, "running scanner: %s\n", s.Name())
+	for _, namespace := range namespaces {
+		for _, s := range enabled {
+			if opts.verbose {
+				fmt.Fprintf(os.Stderr, "[%s] running scanner: %s\n", namespace, s.Name())
+			}
+			ff, scanErr := s.Scan(ctx, namespace)
+			if scanErr != nil {
+				fmt.Fprintf(os.Stderr, "warning: [%s] scanner %s: %v\n", namespace, s.Name(), scanErr)
+				hadErr = true
+				continue
+			}
+			findings = append(findings, ff...)
 		}
-		ff, scanErr := s.Scan(ctx, ns)
-		if scanErr != nil {
-			fmt.Fprintf(os.Stderr, "warning: scanner %s: %v\n", s.Name(), scanErr)
-			hadErr = true
-			continue
-		}
-		findings = append(findings, ff...)
 	}
 
 	reportOpts := report.Options{
-		Namespace: ns,
-		Window:    opts.window,
-		Pricing:   opts.pricing,
-		NoColor:   opts.noColor,
-		Output:    opts.output,
-		Rightsize: opts.rightsize,
+		Namespace:     ns,
+		AllNamespaces: opts.allNamespaces,
+		Window:        opts.window,
+		Pricing:       opts.pricing,
+		NoColor:       opts.noColor,
+		Output:        opts.output,
+		Rightsize:     opts.rightsize,
 	}
 	if err := report.Render(os.Stdout, findings, reportOpts); err != nil {
 		return fmt.Errorf("rendering report: %w", err)
