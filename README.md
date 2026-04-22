@@ -2,6 +2,8 @@
 
 A read-only CLI that scans an OpenShift or Kubernetes namespace for wasted resources and reports an estimated monthly cost.
 
+![demo](demo.gif)
+
 ## What it finds
 
 - **Scaled-to-zero** workloads (Deployments, StatefulSets, DeploymentConfigs)
