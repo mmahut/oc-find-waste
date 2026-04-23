@@ -122,6 +122,10 @@ func parseWindow(s string) (time.Duration, error) {
 func runScan(opts *scanOptions) error {
 	rest.SetDefaultWarningHandler(rest.NoWarnings{})
 
+	if err := validateOutput(opts.output); err != nil {
+		return err
+	}
+
 	timeout, err := time.ParseDuration(opts.timeout)
 	if err != nil || timeout <= 0 {
 		return fmt.Errorf("invalid --timeout %q: use a Go duration (e.g. 2m, 90s)", opts.timeout)
@@ -276,6 +280,15 @@ func runScan(opts *scanOptions) error {
 		os.Exit(1)
 	}
 	return nil
+}
+
+func validateOutput(s string) error {
+	switch s {
+	case "text", "json":
+		return nil
+	default:
+		return fmt.Errorf("invalid --output %q: must be text or json", s)
+	}
 }
 
 func filterScanners(all []scanner.Scanner, only, skip []string) []scanner.Scanner {
