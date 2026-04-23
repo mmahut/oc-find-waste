@@ -8,6 +8,7 @@ import (
 
 	osbuildv1client "github.com/openshift/client-go/build/clientset/versioned"
 	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -63,19 +64,26 @@ func (s *unusedImageStreamsScanner) Scan(ctx context.Context, namespace string) 
 		}
 	}
 
-	// Mark ImageStreams referenced by BuildConfig outputs.
+	// Mark ImageStreams referenced by BuildConfig outputs and strategy inputs.
 	if s.buildClient != nil {
 		bcs, bcErr := s.buildClient.BuildV1().BuildConfigs(namespace).List(ctx, metav1.ListOptions{})
 		if bcErr != nil {
 			fmt.Fprintf(os.Stderr, "warning: listing buildconfigs: %v\n", bcErr)
 		} else {
 			for i := range bcs.Items {
-				to := bcs.Items[i].Spec.Output.To
-				if to == nil || to.Kind != "ImageStreamTag" {
-					continue
+				bc := &bcs.Items[i]
+				markISRef(bc.Spec.Output.To, referenced)
+				if bc.Spec.Strategy.SourceStrategy != nil {
+					markISRef(&bc.Spec.Strategy.SourceStrategy.From, referenced)
 				}
-				if name := isNameFromISTag(to.Name); name != "" {
-					referenced[name] = true
+				if bc.Spec.Strategy.DockerStrategy != nil {
+					markISRef(bc.Spec.Strategy.DockerStrategy.From, referenced)
+				}
+				if bc.Spec.Strategy.CustomStrategy != nil {
+					markISRef(&bc.Spec.Strategy.CustomStrategy.From, referenced)
+				}
+				for j := range bc.Spec.Source.Images {
+					markISRef(&bc.Spec.Source.Images[j].From, referenced)
 				}
 			}
 		}
@@ -101,7 +109,22 @@ func (s *unusedImageStreamsScanner) Scan(ctx context.Context, namespace string) 
 // isNameFromImage extracts the ImageStream name when the image reference points
 // to the given namespace in the internal OpenShift registry.
 // Handles: REGISTRY/namespace/name:tag  and  REGISTRY/namespace/name@sha256:...
+//
+// To avoid false matches on external registries that happen to contain the
+// namespace name as a path component, we only match when the host portion of
+// the image begins with one of the known internal registry prefixes.
 func isNameFromImage(image, namespace string) string {
+	const (
+		svcRegistry     = "image-registry.openshift-image-registry.svc"
+		legacyRegistry1 = "docker-registry.default.svc"
+		legacyRegistry2 = "172.30.1.1" // common CRC/minishift default
+	)
+	hasInternalHost := strings.HasPrefix(image, svcRegistry) ||
+		strings.HasPrefix(image, legacyRegistry1) ||
+		strings.HasPrefix(image, legacyRegistry2)
+	if !hasInternalHost {
+		return ""
+	}
 	prefix := "/" + namespace + "/"
 	idx := strings.Index(image, prefix)
 	if idx < 0 {
@@ -112,6 +135,20 @@ func isNameFromImage(image, namespace string) string {
 		rest = rest[:i]
 	}
 	return rest
+}
+
+// markISRef marks an ImageStream referenced by an ObjectReference as used.
+// Recognises both ImageStreamTag and ImageStreamImage kinds.
+func markISRef(ref *corev1.ObjectReference, referenced map[string]bool) {
+	if ref == nil {
+		return
+	}
+	if ref.Kind != "ImageStreamTag" && ref.Kind != "ImageStreamImage" {
+		return
+	}
+	if name := isNameFromISTag(ref.Name); name != "" {
+		referenced[name] = true
+	}
 }
 
 // isNameFromISTag extracts the ImageStream name from an ImageStreamTag reference.

@@ -89,6 +89,26 @@ func TestUnusedImageStreams(t *testing.T) {
 			wantCount: 0,
 		},
 		{
+			name:      "imagestream used as s2i builder base (SourceStrategy.From) — no finding",
+			imageObjs: []runtime.Object{imageStream("python-311")},
+			buildObjs: []runtime.Object{func() *osbuildv1.BuildConfig {
+				bc := &osbuildv1.BuildConfig{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-app-build", Namespace: testNS},
+				}
+				bc.Spec.Strategy.SourceStrategy = &osbuildv1.SourceBuildStrategy{
+					From: corev1.ObjectReference{Kind: "ImageStreamTag", Name: "python-311:latest"},
+				}
+				return bc
+			}()},
+			wantCount: 0,
+		},
+		{
+			name:      "external registry image with matching namespace substring — no false positive",
+			imageObjs: []runtime.Object{imageStream("myapp")},
+			k8sObjs:   []runtime.Object{podWithImage("quay.io/bar/" + testNS + "/myapp:tag")},
+			wantCount: 1, // quay.io is not the internal registry; IS should still be flagged
+		},
+		{
 			name:      "nil imageClient — no-op on vanilla k8s",
 			wantCount: 0, // tested separately below via nil client
 		},
