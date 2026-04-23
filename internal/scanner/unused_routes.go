@@ -39,7 +39,7 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		`sum by (route) (increase(haproxy_backend_http_total_requests{exported_namespace=%q}[%s]))`,
 		namespace, wh)
 
-	traffic, err := s.prom.Increase(ctx, query, s.window)
+	traffic, err := s.prom.Increase(ctx, query, s.window, "route")
 	if err != nil {
 		return nil, fmt.Errorf("querying haproxy traffic: %w", err)
 	}

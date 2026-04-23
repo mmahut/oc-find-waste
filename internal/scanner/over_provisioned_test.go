@@ -25,14 +25,14 @@ type fakePromClient struct {
 	mem map[string]float64
 }
 
-func (f *fakePromClient) RangeP95(_ context.Context, query string, _ time.Duration) (map[string]float64, error) {
+func (f *fakePromClient) RangeP95(_ context.Context, query string, _ time.Duration, _ string) (map[string]float64, error) {
 	if strings.Contains(query, "cpu") {
 		return f.cpu, nil
 	}
 	return f.mem, nil
 }
 
-func (f *fakePromClient) Increase(_ context.Context, _ string, _ time.Duration) (map[string]float64, error) {
+func (f *fakePromClient) Increase(_ context.Context, _ string, _ time.Duration, _ string) (map[string]float64, error) {
 	return nil, nil
 }
 

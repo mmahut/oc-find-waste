@@ -48,7 +48,7 @@ func TestClientRangeP95(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour)
+	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour, "pod")
 	if err != nil {
 		t.Fatalf("RangeP95: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestClientIncrease(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 
-	result, err := c.Increase(context.Background(), "test_query", 7*24*time.Hour)
+	result, err := c.Increase(context.Background(), "test_query", 7*24*time.Hour, "route")
 	if err != nil {
 		t.Fatalf("Increase: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestSelfSignedTLS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour)
+	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour, "pod")
 	if err != nil {
 		t.Fatalf("RangeP95 against self-signed TLS server: %v", err)
 	}

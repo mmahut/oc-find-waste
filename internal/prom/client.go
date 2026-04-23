@@ -17,10 +17,10 @@ import (
 // It is an interface so tests can inject a fake without a real Prometheus.
 type Client interface {
 	// RangeP95 runs an instant query (window already embedded in the PromQL)
-	// and returns map[labelValue]p95Value.
-	RangeP95(ctx context.Context, query string, window time.Duration) (map[string]float64, error)
-	// Increase runs an instant query and returns map[labelValue]increaseValue.
-	Increase(ctx context.Context, query string, window time.Duration) (map[string]float64, error)
+	// and returns map[byLabel value → p95Value].
+	RangeP95(ctx context.Context, query string, window time.Duration, byLabel string) (map[string]float64, error)
+	// Increase runs an instant query and returns map[byLabel value → increaseValue].
+	Increase(ctx context.Context, query string, window time.Duration, byLabel string) (map[string]float64, error)
 }
 
 type promClient struct {
@@ -58,15 +58,15 @@ func New(url, bearerToken string, insecureTLS bool) (Client, error) {
 	return &promClient{api: promv1.NewAPI(c)}, nil
 }
 
-func (c *promClient) RangeP95(ctx context.Context, query string, _ time.Duration) (map[string]float64, error) {
-	return c.instant(ctx, query)
+func (c *promClient) RangeP95(ctx context.Context, query string, _ time.Duration, byLabel string) (map[string]float64, error) {
+	return c.instant(ctx, query, byLabel)
 }
 
-func (c *promClient) Increase(ctx context.Context, query string, _ time.Duration) (map[string]float64, error) {
-	return c.instant(ctx, query)
+func (c *promClient) Increase(ctx context.Context, query string, _ time.Duration, byLabel string) (map[string]float64, error) {
+	return c.instant(ctx, query, byLabel)
 }
 
-func (c *promClient) instant(ctx context.Context, query string) (map[string]float64, error) {
+func (c *promClient) instant(ctx context.Context, query, byLabel string) (map[string]float64, error) {
 	result, warnings, err := c.api.Query(ctx, query, time.Now())
 	for _, w := range warnings {
 		fmt.Fprintf(os.Stderr, "prometheus warning: %s\n", w)
@@ -82,11 +82,9 @@ func (c *promClient) instant(ctx context.Context, query string) (map[string]floa
 
 	out := make(map[string]float64, len(vec))
 	for _, sample := range vec {
-		for lname, lval := range sample.Metric {
-			if lname != model.MetricNameLabel {
-				out[string(lval)] = float64(sample.Value)
-				break
-			}
+		lval := sample.Metric[model.LabelName(byLabel)]
+		if lval != "" {
+			out[string(lval)] = float64(sample.Value)
 		}
 	}
 	return out, nil

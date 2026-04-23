@@ -60,11 +60,11 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		`quantile_over_time(0.95,sum by (pod)(container_memory_working_set_bytes{namespace=%q,container!="",container!="POD"})[%s:5m])`,
 		namespace, wh)
 
-	cpuP95, err := s.prom.RangeP95(ctx, cpuQuery, s.window)
+	cpuP95, err := s.prom.RangeP95(ctx, cpuQuery, s.window, "pod")
 	if err != nil {
 		return nil, fmt.Errorf("querying cpu p95: %w", err)
 	}
-	memP95, err := s.prom.RangeP95(ctx, memQuery, s.window)
+	memP95, err := s.prom.RangeP95(ctx, memQuery, s.window, "pod")
 	if err != nil {
 		return nil, fmt.Errorf("querying memory p95: %w", err)
 	}

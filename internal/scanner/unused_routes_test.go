@@ -137,10 +137,10 @@ type fakePromRouteClient struct {
 	data map[string]float64
 }
 
-func (f *fakePromRouteClient) RangeP95(_ context.Context, _ string, _ time.Duration) (map[string]float64, error) {
+func (f *fakePromRouteClient) RangeP95(_ context.Context, _ string, _ time.Duration, _ string) (map[string]float64, error) {
 	return nil, nil
 }
 
-func (f *fakePromRouteClient) Increase(_ context.Context, _ string, _ time.Duration) (map[string]float64, error) {
+func (f *fakePromRouteClient) Increase(_ context.Context, _ string, _ time.Duration, _ string) (map[string]float64, error) {
 	return f.data, nil
 }
