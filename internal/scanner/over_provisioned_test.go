@@ -338,3 +338,37 @@ func TestOverProvisioned_Patch(t *testing.T) {
 		t.Errorf("Patch missing memory field: %q", patch)
 	}
 }
+
+func TestOverProvisioned_SavingsLessThanMonthlyCost(t *testing.T) {
+	// When p95 > 0, sug = ceil(p95 × 1.5) > p95, so the practical savings
+	// (req - sug) must be strictly less than the theoretical waste (req - p95).
+	profile, err := pricing.Load("aws")
+	if err != nil {
+		t.Fatalf("loading aws profile: %v", err)
+	}
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{"web-pod": 0.18},      // 180m — well below 30% threshold
+		mem: map[string]float64{"web-pod": 629145600}, // 600Mi
+	}
+	s := scanner.NewOverProvisioned(client, prom, profile, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	f := findings[0]
+	if f.MonthlyCost <= 0 {
+		t.Errorf("MonthlyCost = %.4f, want > 0", f.MonthlyCost)
+	}
+	if f.Savings <= 0 {
+		t.Errorf("Savings = %.4f, want > 0", f.Savings)
+	}
+	if f.Savings >= f.MonthlyCost {
+		t.Errorf("Savings (%.4f) >= MonthlyCost (%.4f); savings must be < waste because sug > p95",
+			f.Savings, f.MonthlyCost)
+	}
+}

@@ -162,20 +162,24 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 
 		var monthlyCost, savings float64
 		if s.pricing != nil {
+			// Theoretical waste: full gap from request down to p95.
+			unusedCPU := math.Max(0, o.reqCPU-o.maxP95CPU)
+			unusedMemGB := math.Max(0, (o.reqMem-o.maxP95Mem)/1e9)
+			monthlyCost = s.pricing.WorkloadMonthlyUSD(unusedCPU, unusedMemGB) * float64(o.replicas)
+
+			// Practical savings: amount reclaimed by rightsizing to sug (= ceil(p95 × 1.5)).
 			wastedCPU := math.Max(0, o.reqCPU-sugCPU)
 			wastedMemGB := math.Max(0, (o.reqMem-sugMem)/1e9)
-			costPerPod := s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGB)
-			monthlyCost = costPerPod * float64(o.replicas)
+			savings = s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGB) * float64(o.replicas)
 
-			if monthlyCost > 0 {
+			if savings > 0 {
 				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(o.reqCPU, o.reqMem/1e9)
 				sugCostPerPod := s.pricing.WorkloadMonthlyUSD(sugCPU, sugMem/1e9)
-				savings = math.Max(0, reqCostPerPod-sugCostPerPod) * float64(o.replicas)
 				var savingsPct float64
 				if reqCostPerPod > 0 {
 					savingsPct = 100 * (reqCostPerPod - sugCostPerPod) / reqCostPerPod
 				}
-				suggestion += fmt.Sprintf(" ($%.2f/mo, -%.0f%%)", monthlyCost, savingsPct)
+				suggestion += fmt.Sprintf(" ($%.2f/mo, -%.0f%%)", savings, savingsPct)
 			}
 		}
 
