@@ -89,10 +89,18 @@ func newScanCmd() *cobra.Command {
 	return cmd
 }
 
+// windowRe accepts an optional days component followed by optional h/m/s components.
+// Anchoring to ^ and $ prevents pathological inputs like "1d2d3h" or "7days".
+var windowRe = regexp.MustCompile(`^(\d+d)?(\d+h)?(\d+m)?(\d+s)?$`)
+
+// dayRe is used only to expand the d-suffix into hours after the format is validated.
 var dayRe = regexp.MustCompile(`(\d+)d`)
 
-// parseWindow accepts Go durations plus a "d" suffix for days (e.g. "7d", "1d12h").
+// parseWindow accepts Go durations plus a "d" suffix for days (e.g. "7d", "24h", "1d12h").
 func parseWindow(s string) (time.Duration, error) {
+	if s == "" || !windowRe.MatchString(s) {
+		return 0, fmt.Errorf("invalid --window %q: use a Go duration or days suffix (e.g. 7d, 24h, 1d12h)", s)
+	}
 	expanded := dayRe.ReplaceAllStringFunc(s, func(m string) string {
 		n, _ := strconv.Atoi(dayRe.FindStringSubmatch(m)[1])
 		return fmt.Sprintf("%dh", n*24)
