@@ -26,7 +26,7 @@ type fakePromClient struct {
 }
 
 func (f *fakePromClient) RangeP95(_ context.Context, query string, _ time.Duration, _ string) (map[string]float64, error) {
-	if strings.Contains(query, "cpu") {
+	if strings.Contains(query, "container_cpu_usage_seconds_total") {
 		return f.cpu, nil
 	}
 	return f.mem, nil
