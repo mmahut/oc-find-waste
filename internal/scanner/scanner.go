@@ -2,12 +2,12 @@ package scanner
 
 import "context"
 
-type Severity int
+type Severity string
 
 const (
-	SeverityInfo Severity = iota
-	SeverityWarning
-	SeverityCritical
+	SeverityInfo     Severity = "info"
+	SeverityWarning  Severity = "warning"
+	SeverityCritical Severity = "critical"
 )
 
 type Finding struct {
