@@ -56,6 +56,21 @@ func TestUnusedRoutes_EmptyNamespace(t *testing.T) {
 	}
 }
 
+func TestUnusedRoutes_EmptyTrafficMap_NoFindings(t *testing.T) {
+	// Prometheus reachable but returns empty map — HAProxy metrics likely absent.
+	// Must return zero findings rather than flagging every route as unused.
+	rc := osroutefake.NewClientset([]runtime.Object{route("my-route", "test")}...)
+	prom := &fakePromRouteClient{data: nil} // nil = Prometheus returned no HAProxy metrics at all
+	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("got %d findings, want 0 when traffic map is empty", len(findings))
+	}
+}
+
 func TestUnusedRoutes_Finding_ZeroTraffic(t *testing.T) {
 	rc := osroutefake.NewClientset([]runtime.Object{route("old-admin", "test")}...)
 	// Route exists but Prometheus returns 0 requests for it.

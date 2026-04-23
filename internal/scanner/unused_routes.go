@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	osroutev1client "github.com/openshift/client-go/route/clientset/versioned"
@@ -47,6 +48,16 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 	routes, err := s.routeClient.RouteV1().Routes(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("listing routes: %w", err)
+	}
+
+	// A nil map means Prometheus returned no results at all — HAProxy metrics may
+	// not be exposed or may use a different label set. Reporting every route as
+	// unused would be misleading; warn and skip instead.
+	// An empty (non-nil) map means HAProxy is working but no route in this
+	// namespace received any traffic — those routes are still legitimate findings.
+	if traffic == nil && len(routes.Items) > 0 {
+		fmt.Fprintf(os.Stderr, "warning: [%s] no HAProxy traffic metrics found; skipping unused-routes scan\n", namespace)
+		return nil, nil
 	}
 
 	windowDays := fmt.Sprintf("%.0fd", s.window.Hours()/24)
