@@ -59,6 +59,42 @@ func TestCompletedJobs(t *testing.T) {
 			wantCount: 0,
 		},
 		{
+			name: "cronjob-owned job completed 10 days ago — no finding",
+			objects: []runtime.Object{
+				&batchv1.Job{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "weekly-report-28",
+						Namespace: "test",
+						OwnerReferences: []metav1.OwnerReference{
+							{Kind: "CronJob", Name: "weekly-report"},
+						},
+					},
+					Status: batchv1.JobStatus{CompletionTime: completionTime(10 * 24 * time.Hour)},
+				},
+			},
+			wantCount: 0,
+		},
+		{
+			name: "cronjob-owned and standalone old jobs — only standalone flagged",
+			objects: []runtime.Object{
+				&batchv1.Job{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cron-child",
+						Namespace: "test",
+						OwnerReferences: []metav1.OwnerReference{
+							{Kind: "CronJob", Name: "nightly-backup"},
+						},
+					},
+					Status: batchv1.JobStatus{CompletionTime: completionTime(10 * 24 * time.Hour)},
+				},
+				&batchv1.Job{
+					ObjectMeta: metav1.ObjectMeta{Name: "old-migration", Namespace: "test"},
+					Status:     batchv1.JobStatus{CompletionTime: completionTime(10 * 24 * time.Hour)},
+				},
+			},
+			wantCount: 1,
+		},
+		{
 			name: "mix: one old, one recent",
 			objects: []runtime.Object{
 				&batchv1.Job{

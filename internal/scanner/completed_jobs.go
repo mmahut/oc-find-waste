@@ -34,6 +34,9 @@ func (s *completedJobsScanner) Scan(ctx context.Context, namespace string) ([]Fi
 		if job.Status.CompletionTime == nil {
 			continue
 		}
+		if ownedByCronJob(job.OwnerReferences) {
+			continue
+		}
 		age := time.Since(job.Status.CompletionTime.Time)
 		if age < completedJobThreshold {
 			continue
@@ -49,4 +52,13 @@ func (s *completedJobsScanner) Scan(ctx context.Context, namespace string) ([]Fi
 		})
 	}
 	return findings, nil
+}
+
+func ownedByCronJob(refs []metav1.OwnerReference) bool {
+	for _, r := range refs {
+		if r.Kind == "CronJob" {
+			return true
+		}
+	}
+	return false
 }
