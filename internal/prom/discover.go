@@ -29,6 +29,10 @@ var defaultURLs = []string{
 // When nil is returned a warning has already been printed to stderr.
 func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken string) Client {
 	if overrideURL != "" {
+		if !probeHealthy(ctx, overrideURL, bearerToken, false) {
+			fmt.Fprintf(os.Stderr, "warning: prometheus override URL unreachable: %s\n", overrideURL)
+			return nil
+		}
 		c, err := New(overrideURL, bearerToken, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: prometheus override URL unusable: %v\n", err)
