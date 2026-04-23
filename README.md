@@ -13,21 +13,34 @@ A read-only CLI that scans an OpenShift or Kubernetes namespace for wasted resou
 - **Over-provisioned Pods** — p95 CPU/memory well below requests *(requires Prometheus)*
 - **Unused Routes** — zero HAProxy traffic over the window *(requires Prometheus)*
 
+## Install
+
+```sh
+# requires Go 1.21+
+go install github.com/mmahut/oc-find-waste/cmd/oc-find-waste@latest
+```
+
+Pre-built binaries for Linux and macOS (amd64/arm64) are on the [Releases page](https://github.com/mmahut/oc-find-waste/releases).
+
 ## Usage
 
 ```
 oc-find-waste scan -n <namespace> [flags]
 
 Flags:
-  -n, --namespace       namespace to scan
-  -A, --all-namespaces  scan all namespaces
-      --pricing         aws | azure | gcp | on-prem | path/to/profile.yaml  (default: on-prem)
-      --window          lookback window for metrics, e.g. 7d, 24h  (default: 7d)
-  -o, --output          text | json  (default: text)
-      --rightsize       print suggested resource patch YAML (does not apply anything)
-      --skip            scanner name to skip (repeatable)
-      --only            scanner name to run exclusively (repeatable)
-  -v, --verbose         show per-scanner progress
+  -n, --namespace string        namespace to scan (defaults to current context namespace)
+  -A, --all-namespaces          scan every namespace the user can list
+      --kubeconfig string       path to kubeconfig (defaults to $KUBECONFIG or ~/.kube/config)
+      --pricing string          aws | azure | gcp | on-prem | path/to/profile.yaml (default "on-prem")
+      --window string           lookback window for metrics-based scanners, e.g. 7d, 24h (default "7d")
+      --timeout string          maximum time for all scanners to complete (default "2m")
+      --prometheus-url string   override Prometheus endpoint (auto-detected by default)
+  -o, --output string           text | json (default "text")
+      --no-color                disable ANSI colors
+      --rightsize               print suggested resource patch YAML (does not apply changes)
+      --skip stringArray        scanner name to skip (repeatable)
+      --only stringArray        scanner name to run exclusively (repeatable)
+  -v, --verbose                 log per-scanner progress to stderr
 ```
 
 ## Example output
