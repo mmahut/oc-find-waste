@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"time"
 
 	osappsv1client "github.com/openshift/client-go/apps/clientset/versioned"
+	kapierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -34,6 +36,8 @@ func (s *scaledToZeroScanner) Scan(ctx context.Context, namespace string) ([]Fin
 			ref := hpas.Items[i].Spec.ScaleTargetRef
 			hpaTargets[ref.Kind+"/"+ref.Name] = true
 		}
+	} else if !kapierrors.IsForbidden(hpaErr) && !kapierrors.IsNotFound(hpaErr) {
+		fmt.Fprintf(os.Stderr, "warning: [%s] could not list HPAs: %v\n", namespace, hpaErr)
 	}
 
 	var findings []Finding
@@ -67,7 +71,7 @@ func (s *scaledToZeroScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		}
 		for i := range dcs.Items {
 			dc := &dcs.Items[i]
-			if dc.Spec.Replicas == 0 {
+			if dc.Spec.Replicas == 0 && !hpaTargets["DeploymentConfig/"+dc.Name] {
 				findings = append(findings, scaledToZeroFinding("DeploymentConfig", dc.Name, namespace, dc.CreationTimestamp.Time))
 			}
 		}

@@ -183,4 +183,33 @@ func TestScaledToZero_OpenShift(t *testing.T) {
 			t.Errorf("got %d findings, want 0", len(findings))
 		}
 	})
+
+	t.Run("dc scaled to zero but HPA-managed — no finding", func(t *testing.T) {
+		longAgo := metav1.NewTime(time.Now().Add(-10 * 24 * time.Hour))
+		k8sClient := fake.NewClientset(
+			&autoscalingv1.HorizontalPodAutoscaler{
+				ObjectMeta: metav1.ObjectMeta{Name: "dc-hpa", Namespace: "test"},
+				Spec: autoscalingv1.HorizontalPodAutoscalerSpec{
+					ScaleTargetRef: autoscalingv1.CrossVersionObjectReference{Kind: "DeploymentConfig", Name: "idle-dc"},
+				},
+			},
+		)
+		ocpClient := osappsfake.NewClientset(
+			&osappsv1.DeploymentConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "idle-dc", Namespace: "test",
+					CreationTimestamp: longAgo,
+				},
+				Spec: osappsv1.DeploymentConfigSpec{Replicas: 0},
+			},
+		)
+		s := scanner.NewScaledToZero(k8sClient, ocpClient)
+		findings, err := s.Scan(context.Background(), "test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(findings) != 0 {
+			t.Errorf("got %d findings, want 0 (DC is HPA-managed)", len(findings))
+		}
+	})
 }
