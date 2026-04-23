@@ -216,7 +216,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			}
 		}
 
-		patch := buildRightsizePatch(o.kind, o.name, namespace, sugCPU, sugMem, o.containers, o.reqCPU, o.reqMem)
+		patch := buildRightsizePatch(o.kind, o.name, namespace, sugCPU, sugMem, o.containers, o.reqCPU, o.reqMem, cpuOver, memOver)
 
 		findings = append(findings, Finding{
 			Kind:        o.kind,
@@ -273,7 +273,9 @@ func (s *overProvisionedScanner) resolveOwner(ctx context.Context, pod *corev1.P
 
 // buildRightsizePatch generates a kubectl strategic-merge-patch YAML for the
 // suggested resource requests, distributing them proportionally across containers.
-func buildRightsizePatch(kind, name, namespace string, sugCPU, sugMem float64, containers []containerReq, totalReqCPU, totalReqMem float64) string {
+// Only dimensions flagged as over-provisioned (cpuOver/memOver) are included;
+// dimensions without Prometheus data are omitted to avoid destructive no-op lines.
+func buildRightsizePatch(kind, name, namespace string, sugCPU, sugMem float64, containers []containerReq, totalReqCPU, totalReqMem float64, cpuOver, memOver bool) string {
 	// Convert totals back to millicores/bytes for ratio math.
 	totalReqCPUm := int64(math.Round(totalReqCPU * 1000))
 	totalReqMemB := int64(totalReqMem)
@@ -303,12 +305,12 @@ func buildRightsizePatch(kind, name, namespace string, sugCPU, sugMem float64, c
 		fmt.Fprintf(&sb, "%s  resources:\n", indent)
 		fmt.Fprintf(&sb, "%s    requests:\n", indent)
 
-		if c.reqCPUm > 0 && totalReqCPUm > 0 {
+		if cpuOver && c.reqCPUm > 0 && totalReqCPUm > 0 {
 			share := float64(c.reqCPUm) / float64(totalReqCPUm)
 			perContainer := math.Ceil(sugCPU*share*1000) / 1000
 			fmt.Fprintf(&sb, "%s      cpu: %q\n", indent, fmtCPU(perContainer))
 		}
-		if c.reqMemB > 0 && totalReqMemB > 0 {
+		if memOver && c.reqMemB > 0 && totalReqMemB > 0 {
 			share := float64(c.reqMemB) / float64(totalReqMemB)
 			perContainer := math.Ceil(sugMem*share/(1<<20)) * (1 << 20)
 			fmt.Fprintf(&sb, "%s      memory: %q\n", indent, fmtMem(perContainer))

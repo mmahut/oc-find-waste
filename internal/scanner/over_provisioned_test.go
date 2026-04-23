@@ -395,9 +395,9 @@ func TestOverProvisioned_PartialData_MemOnlyOver(t *testing.T) {
 	if strings.Contains(f.Suggestion, "CPU") {
 		t.Errorf("Suggestion must not mention CPU when no CPU data: %q", f.Suggestion)
 	}
-	// Patch must not zero CPU (sugCPU = reqCPU when no data).
-	if strings.Contains(f.Patch, `cpu: "0m"`) {
-		t.Errorf("Patch must not zero CPU when no data: %q", f.Patch)
+	// Patch must omit the cpu: line entirely when no CPU data.
+	if strings.Contains(f.Patch, "cpu:") {
+		t.Errorf("Patch must not contain cpu: line when no CPU data: %q", f.Patch)
 	}
 	// p95 section of Detail must not mention CPU (no measurement was taken).
 	if idx := strings.Index(f.Detail, "p95 usage:"); idx >= 0 && strings.Contains(f.Detail[idx:], "CPU") {
@@ -427,12 +427,64 @@ func TestOverProvisioned_PartialData_CPUOnlyOver(t *testing.T) {
 	if strings.Contains(f.Suggestion, "RAM") {
 		t.Errorf("Suggestion must not mention RAM when no memory data: %q", f.Suggestion)
 	}
-	// Patch must not zero memory (sugMem = reqMem when no data).
-	if strings.Contains(f.Patch, `memory: "0Mi"`) {
-		t.Errorf("Patch must not zero memory when no data: %q", f.Patch)
+	// Patch must omit the memory: line entirely when no memory data.
+	if strings.Contains(f.Patch, "memory:") {
+		t.Errorf("Patch must not contain memory: line when no memory data: %q", f.Patch)
 	}
 	// p95 section of Detail must not mention RAM (no measurement was taken).
 	if idx := strings.Index(f.Detail, "p95 usage:"); idx >= 0 && strings.Contains(f.Detail[idx:], "RAM") {
 		t.Errorf("Detail p95 section must not fabricate memory p95: %q", f.Detail)
+	}
+}
+
+func TestOverProvisioned_PartialMetrics_MemOnly(t *testing.T) {
+	// CPU metrics entirely absent; memory is over-provisioned.
+	// Patch must contain a memory: line and no cpu: line at all.
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{},                     // no CPU metrics
+		mem: map[string]float64{"web-pod": 629145600}, // 600Mi < 30% of 4Gi
+	}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	f := findings[0]
+	if !strings.Contains(f.Patch, "memory:") {
+		t.Errorf("Patch missing memory: line: %q", f.Patch)
+	}
+	if strings.Contains(f.Patch, "cpu:") {
+		t.Errorf("Patch must not contain cpu: line when no CPU metrics: %q", f.Patch)
+	}
+}
+
+func TestOverProvisioned_PartialMetrics_CPUOnly(t *testing.T) {
+	// Memory metrics entirely absent; CPU is over-provisioned.
+	// Patch must contain a cpu: line and no memory: line at all.
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{"web-pod": 0.18}, // 180m < 30% of 2000m
+		mem: map[string]float64{},                // no memory metrics
+	}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1", len(findings))
+	}
+	f := findings[0]
+	if !strings.Contains(f.Patch, "cpu:") {
+		t.Errorf("Patch missing cpu: line: %q", f.Patch)
+	}
+	if strings.Contains(f.Patch, "memory:") {
+		t.Errorf("Patch must not contain memory: line when no memory metrics: %q", f.Patch)
 	}
 }
