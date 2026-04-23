@@ -26,6 +26,9 @@ import (
 	"github.com/mmahut/oc-find-waste/internal/scanner"
 )
 
+// version is set at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
+
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		os.Exit(2)
@@ -39,6 +42,7 @@ func newRootCmd() *cobra.Command {
 		Long: `oc-find-waste is a read-only CLI that scans a namespace for idle workloads,
 orphaned storage, over-provisioned pods, and unused Routes, then reports an
 estimated monthly cost of the waste.`,
+		Version: version,
 	}
 	root.AddCommand(newScanCmd())
 	return root
