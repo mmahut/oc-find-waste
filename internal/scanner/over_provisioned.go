@@ -150,26 +150,59 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			continue
 		}
 
-		// Suggested = ceil(maxP95 * 1.5) with reasonable granularity.
-		sugCPU := math.Ceil(o.maxP95CPU*1.5*1000) / 1000 // round to millicore
-		sugMem := math.Ceil(o.maxP95Mem*1.5/(1<<20)) * (1 << 20)
+		// Suggested = ceil(maxP95 * 1.5); keep original request for dimensions without data.
+		sugCPU := o.reqCPU // no opinion → preserve current request
+		if cpuOver {
+			sugCPU = math.Ceil(o.maxP95CPU*1.5*1000) / 1000
+		}
+		sugMem := o.reqMem // no opinion → preserve current request
+		if memOver {
+			sugMem = math.Ceil(o.maxP95Mem*1.5/(1<<20)) * (1 << 20)
+		}
 
-		detail := fmt.Sprintf("requests: %s CPU, %s RAM  │  p95 usage: %s CPU, %s RAM",
-			fmtCPU(o.reqCPU), fmtMem(o.reqMem),
-			fmtCPU(o.maxP95CPU), fmtMem(o.maxP95Mem))
+		detail := fmt.Sprintf("requests: %s CPU, %s RAM", fmtCPU(o.reqCPU), fmtMem(o.reqMem))
+		var p95Parts []string
+		if o.haveCPU {
+			p95Parts = append(p95Parts, fmt.Sprintf("%s CPU", fmtCPU(o.maxP95CPU)))
+		}
+		if o.haveMem {
+			p95Parts = append(p95Parts, fmt.Sprintf("%s RAM", fmtMem(o.maxP95Mem)))
+		}
+		if len(p95Parts) > 0 {
+			detail += "  │  p95 usage: " + strings.Join(p95Parts, ", ")
+		}
 
-		suggestion := fmt.Sprintf("suggest: %s CPU, %s RAM", fmtCPU(sugCPU), fmtMem(sugMem))
+		var sugParts []string
+		if cpuOver {
+			sugParts = append(sugParts, fmt.Sprintf("%s CPU", fmtCPU(sugCPU)))
+		}
+		if memOver {
+			sugParts = append(sugParts, fmt.Sprintf("%s RAM", fmtMem(sugMem)))
+		}
+		suggestion := "suggest: " + strings.Join(sugParts, ", ")
 
 		var monthlyCost, savings float64
 		if s.pricing != nil {
-			// Theoretical waste: full gap from request down to p95.
-			unusedCPU := math.Max(0, o.reqCPU-o.maxP95CPU)
-			unusedMemGB := math.Max(0, (o.reqMem-o.maxP95Mem)/1e9)
+			// Theoretical waste: full gap from request down to p95 (only for dimensions with data).
+			unusedCPU := 0.0
+			if cpuOver {
+				unusedCPU = math.Max(0, o.reqCPU-o.maxP95CPU)
+			}
+			unusedMemGB := 0.0
+			if memOver {
+				unusedMemGB = math.Max(0, (o.reqMem-o.maxP95Mem)/1e9)
+			}
 			monthlyCost = s.pricing.WorkloadMonthlyUSD(unusedCPU, unusedMemGB) * float64(o.replicas)
 
 			// Practical savings: amount reclaimed by rightsizing to sug (= ceil(p95 × 1.5)).
-			wastedCPU := math.Max(0, o.reqCPU-sugCPU)
-			wastedMemGB := math.Max(0, (o.reqMem-sugMem)/1e9)
+			wastedCPU := 0.0
+			if cpuOver {
+				wastedCPU = math.Max(0, o.reqCPU-sugCPU)
+			}
+			wastedMemGB := 0.0
+			if memOver {
+				wastedMemGB = math.Max(0, (o.reqMem-sugMem)/1e9)
+			}
 			savings = s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGB) * float64(o.replicas)
 
 			if savings > 0 {

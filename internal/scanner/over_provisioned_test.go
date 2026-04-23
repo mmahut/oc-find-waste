@@ -372,3 +372,67 @@ func TestOverProvisioned_SavingsLessThanMonthlyCost(t *testing.T) {
 			f.Savings, f.MonthlyCost)
 	}
 }
+
+func TestOverProvisioned_PartialData_MemOnlyOver(t *testing.T) {
+	// Memory is over-provisioned; CPU has no Prometheus data at all.
+	// CPU suggestion must preserve the original request (2000m), not zero it.
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{},                   // no CPU data
+		mem: map[string]float64{"web-pod": 629145600}, // 600Mi < 30% of 4Gi
+	}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (memory is over-provisioned)", len(findings))
+	}
+	f := findings[0]
+	// Suggestion lists only the dimension being reduced; CPU must be absent.
+	if strings.Contains(f.Suggestion, "CPU") {
+		t.Errorf("Suggestion must not mention CPU when no CPU data: %q", f.Suggestion)
+	}
+	// Patch must not zero CPU (sugCPU = reqCPU when no data).
+	if strings.Contains(f.Patch, `cpu: "0m"`) {
+		t.Errorf("Patch must not zero CPU when no data: %q", f.Patch)
+	}
+	// p95 section of Detail must not mention CPU (no measurement was taken).
+	if idx := strings.Index(f.Detail, "p95 usage:"); idx >= 0 && strings.Contains(f.Detail[idx:], "CPU") {
+		t.Errorf("Detail p95 section must not fabricate CPU p95: %q", f.Detail)
+	}
+}
+
+func TestOverProvisioned_PartialData_CPUOnlyOver(t *testing.T) {
+	// CPU is over-provisioned; memory has no Prometheus data at all.
+	// Memory must not be zeroed in the suggestion, patch, or detail.
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{"web-pod": 0.18}, // 180m < 30% of 2000m
+		mem: map[string]float64{},                // no memory data
+	}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (CPU is over-provisioned)", len(findings))
+	}
+	f := findings[0]
+	// Suggestion lists only the dimension being reduced; memory must be absent.
+	if strings.Contains(f.Suggestion, "RAM") {
+		t.Errorf("Suggestion must not mention RAM when no memory data: %q", f.Suggestion)
+	}
+	// Patch must not zero memory (sugMem = reqMem when no data).
+	if strings.Contains(f.Patch, `memory: "0Mi"`) {
+		t.Errorf("Patch must not zero memory when no data: %q", f.Patch)
+	}
+	// p95 section of Detail must not mention RAM (no measurement was taken).
+	if idx := strings.Index(f.Detail, "p95 usage:"); idx >= 0 && strings.Contains(f.Detail[idx:], "RAM") {
+		t.Errorf("Detail p95 section must not fabricate memory p95: %q", f.Detail)
+	}
+}
