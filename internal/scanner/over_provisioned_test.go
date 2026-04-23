@@ -379,7 +379,7 @@ func TestOverProvisioned_PartialData_MemOnlyOver(t *testing.T) {
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
 	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
-		cpu: map[string]float64{},                   // no CPU data
+		cpu: map[string]float64{},                     // no CPU data
 		mem: map[string]float64{"web-pod": 629145600}, // 600Mi < 30% of 4Gi
 	}
 	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
