@@ -160,7 +160,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 
 		suggestion := fmt.Sprintf("suggest: %s CPU, %s RAM", fmtCPU(sugCPU), fmtMem(sugMem))
 
-		var monthlyCost float64
+		var monthlyCost, savings float64
 		if s.pricing != nil {
 			wastedCPU := math.Max(0, o.reqCPU-sugCPU)
 			wastedMemGiB := math.Max(0, (o.reqMem-sugMem)/(1<<30))
@@ -170,6 +170,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			if monthlyCost > 0 {
 				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(o.reqCPU, o.reqMem/(1<<30))
 				sugCostPerPod := s.pricing.WorkloadMonthlyUSD(sugCPU, sugMem/(1<<30))
+				savings = math.Max(0, reqCostPerPod-sugCostPerPod) * float64(o.replicas)
 				var savingsPct float64
 				if reqCostPerPod > 0 {
 					savingsPct = 100 * (reqCostPerPod - sugCostPerPod) / reqCostPerPod
@@ -187,6 +188,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			Reason:      "over-provisioned",
 			Detail:      detail,
 			MonthlyCost: monthlyCost,
+			Savings:     savings,
 			Suggestion:  suggestion,
 			Patch:       patch,
 			Severity:    SeverityWarning,

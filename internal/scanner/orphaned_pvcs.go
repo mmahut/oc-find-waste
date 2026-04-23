@@ -74,6 +74,7 @@ func (s *orphanedPVCsScanner) Scan(ctx context.Context, namespace string) ([]Fin
 			Name:        name,
 			Reason:      fmt.Sprintf("bound but unmounted (%s)", storageQty.String()),
 			MonthlyCost: monthlyCost,
+			Savings:     monthlyCost,
 			Severity:    SeverityWarning,
 			Suggestion:  "if data is no longer needed, delete the PVC to release storage",
 		})

@@ -17,6 +17,7 @@ type Finding struct {
 	Reason      string   `json:"reason"`
 	Detail      string   `json:"detail,omitempty"`
 	MonthlyCost float64  `json:"monthly_cost_usd,omitempty"`
+	Savings     float64  `json:"savings_usd,omitempty"`
 	Suggestion  string   `json:"suggestion,omitempty"`
 	Severity    Severity `json:"severity"`
 	Patch       string   `json:"patch,omitempty"`

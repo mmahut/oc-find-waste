@@ -59,6 +59,33 @@ func TestRenderText_WithFinding(t *testing.T) {
 	}
 }
 
+func TestRenderText_SavingsPercentage(t *testing.T) {
+	// MonthlyCost=60, Savings=50 → 83% (not 100%).
+	findings := []scanner.Finding{
+		{Kind: "Deployment", Namespace: "test-ns", Name: "idle", Reason: "scaled to 0",
+			MonthlyCost: 50.00, Savings: 40.00, Severity: scanner.SeverityWarning},
+		{Kind: "PersistentVolumeClaim", Namespace: "test-ns", Name: "orphan", Reason: "unmounted",
+			MonthlyCost: 10.00, Savings: 10.00, Severity: scanner.SeverityWarning},
+	}
+	var buf bytes.Buffer
+	if err := report.Render(&buf, findings, baseOpts); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "$60.00") {
+		t.Errorf("expected total waste $60.00 in output:\n%s", out)
+	}
+	if !strings.Contains(out, "$50.00") {
+		t.Errorf("expected savings $50.00 in output:\n%s", out)
+	}
+	if !strings.Contains(out, "83%") {
+		t.Errorf("expected 83%% savings percentage in output:\n%s", out)
+	}
+	if strings.Contains(out, "100%") {
+		t.Errorf("expected non-100%% savings, got 100%% in output:\n%s", out)
+	}
+}
+
 func TestRenderJSON(t *testing.T) {
 	findings := []scanner.Finding{
 		{

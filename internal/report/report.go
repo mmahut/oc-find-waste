@@ -81,19 +81,19 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	sep := strings.Repeat("─", 45)
 	wln(w, sep)
 
-	var totalCost, savingsCost float64
+	var totalCost, totalSavings float64
 	for _, f := range findings {
 		totalCost += f.MonthlyCost
+		totalSavings += f.Savings
 	}
-	savingsCost = totalCost
 
 	wf(w, "Findings: %d\n", len(findings))
 	if totalCost > 0 {
 		wf(w, "Estimated monthly waste: %s\n", cost(fmt.Sprintf("$%.2f", totalCost)))
-		if savingsCost > 0 {
-			pct := 100.0
+		if totalSavings > 0 {
+			pct := 100 * totalSavings / totalCost
 			wf(w, "Potential savings:       %s  (%.0f%%)\n",
-				cost(fmt.Sprintf("$%.2f", savingsCost)), pct)
+				cost(fmt.Sprintf("$%.2f", totalSavings)), pct)
 		}
 	}
 
