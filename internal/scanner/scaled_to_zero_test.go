@@ -9,6 +9,7 @@ import (
 	osappsv1 "github.com/openshift/api/apps/v1"
 	osappsfake "github.com/openshift/client-go/apps/clientset/versioned/fake"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
@@ -72,6 +73,22 @@ func TestScaledToZero(t *testing.T) {
 			wantCount: 1,
 			wantKind:  "StatefulSet",
 			wantWord:  "associated PVCs",
+		},
+		{
+			name: "deployment scaled to zero but HPA-managed — no finding",
+			objects: []runtime.Object{
+				&appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: "hpa-app", Namespace: "test", CreationTimestamp: longAgo},
+					Spec:       appsv1.DeploymentSpec{Replicas: int32Ptr(0)},
+				},
+				&autoscalingv1.HorizontalPodAutoscaler{
+					ObjectMeta: metav1.ObjectMeta{Name: "hpa-app-hpa", Namespace: "test"},
+					Spec: autoscalingv1.HorizontalPodAutoscalerSpec{
+						ScaleTargetRef: autoscalingv1.CrossVersionObjectReference{Kind: "Deployment", Name: "hpa-app"},
+					},
+				},
+			},
+			wantCount: 0,
 		},
 		{
 			name: "deployment with nil replicas — no finding",

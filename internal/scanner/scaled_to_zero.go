@@ -25,6 +25,17 @@ func NewScaledToZero(client kubernetes.Interface, appsClient osappsv1client.Inte
 func (s *scaledToZeroScanner) Name() string { return "scaled-to-zero" }
 
 func (s *scaledToZeroScanner) Scan(ctx context.Context, namespace string) ([]Finding, error) {
+	// Build a set of HPA-managed workloads so we don't flag intentional scale-to-zero
+	// targets (some HPA controllers legitimately drive replicas=0 on cold-start targets).
+	hpaTargets := make(map[string]bool)
+	hpas, hpaErr := s.client.AutoscalingV1().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
+	if hpaErr == nil {
+		for i := range hpas.Items {
+			ref := hpas.Items[i].Spec.ScaleTargetRef
+			hpaTargets[ref.Kind+"/"+ref.Name] = true
+		}
+	}
+
 	var findings []Finding
 
 	deps, err := s.client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
@@ -33,7 +44,7 @@ func (s *scaledToZeroScanner) Scan(ctx context.Context, namespace string) ([]Fin
 	}
 	for i := range deps.Items {
 		d := &deps.Items[i]
-		if d.Spec.Replicas != nil && *d.Spec.Replicas == 0 {
+		if d.Spec.Replicas != nil && *d.Spec.Replicas == 0 && !hpaTargets["Deployment/"+d.Name] {
 			findings = append(findings, scaledToZeroFinding("Deployment", d.Name, namespace, d.CreationTimestamp.Time))
 		}
 	}
@@ -44,7 +55,7 @@ func (s *scaledToZeroScanner) Scan(ctx context.Context, namespace string) ([]Fin
 	}
 	for i := range stss.Items {
 		sts := &stss.Items[i]
-		if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 {
+		if sts.Spec.Replicas != nil && *sts.Spec.Replicas == 0 && !hpaTargets["StatefulSet/"+sts.Name] {
 			findings = append(findings, scaledToZeroFinding("StatefulSet", sts.Name, namespace, sts.CreationTimestamp.Time))
 		}
 	}
