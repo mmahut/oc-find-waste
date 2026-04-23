@@ -49,6 +49,7 @@ type scanOptions struct {
 	namespace     string
 	allNamespaces bool
 	window        string
+	timeout       string
 	pricing       string
 	prometheusURL string
 	skip          []string
@@ -75,6 +76,7 @@ func newScanCmd() *cobra.Command {
 	f.StringVarP(&opts.namespace, "namespace", "n", "", "namespace to scan (defaults to current context namespace)")
 	f.BoolVarP(&opts.allNamespaces, "all-namespaces", "A", false, "scan every namespace the user can list")
 	f.StringVar(&opts.window, "window", "7d", "lookback window for metrics-based scanners (e.g. 7d, 24h)")
+	f.StringVar(&opts.timeout, "timeout", "2m", "maximum time to wait for all scanners to complete (e.g. 2m, 90s)")
 	f.StringVar(&opts.pricing, "pricing", "on-prem", "pricing profile name (aws, azure, gcp, on-prem) or path to YAML file")
 	f.StringVar(&opts.prometheusURL, "prometheus-url", "", "override Prometheus endpoint (auto-detected by default)")
 	f.StringArrayVar(&opts.skip, "skip", nil, "scanner names to skip (repeatable)")
@@ -107,7 +109,13 @@ func parseWindow(s string) (time.Duration, error) {
 
 func runScan(opts *scanOptions) error {
 	rest.SetDefaultWarningHandler(rest.NoWarnings{})
-	ctx := context.Background()
+
+	timeout, err := time.ParseDuration(opts.timeout)
+	if err != nil || timeout <= 0 {
+		return fmt.Errorf("invalid --timeout %q: use a Go duration (e.g. 2m, 90s)", opts.timeout)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
 	window, err := parseWindow(opts.window)
 	if err != nil {
