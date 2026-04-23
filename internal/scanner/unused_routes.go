@@ -35,6 +35,29 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		return nil, nil
 	}
 
+	routes, err := s.routeClient.RouteV1().Routes(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("listing routes: %w", err)
+	}
+	if len(routes.Items) == 0 {
+		return nil, nil
+	}
+
+	// Probe whether HAProxy is exporting metrics at all on this cluster.
+	// The per-namespace traffic query legitimately returns an empty result when
+	// routes are present but received no traffic, so we cannot use it as a signal
+	// for "HAProxy absent". A cluster-wide count query is authoritative: if it
+	// returns no samples, HAProxy metrics do not exist and flagging every route as
+	// unused would be misleading.
+	probe, err := s.prom.Increase(ctx, `count by (job) (haproxy_backend_http_total_requests)`, s.window, "job")
+	if err != nil {
+		return nil, fmt.Errorf("probing haproxy metrics: %w", err)
+	}
+	if len(probe) == 0 {
+		fmt.Fprintf(os.Stderr, "warning: [%s] no HAProxy metrics found on cluster; skipping unused-routes scan\n", namespace)
+		return nil, nil
+	}
+
 	wh := fmt.Sprintf("%dh", int(s.window.Hours()))
 	query := fmt.Sprintf(
 		`sum by (route) (increase(haproxy_backend_http_total_requests{exported_namespace=%q}[%s]))`,
@@ -43,21 +66,6 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 	traffic, err := s.prom.Increase(ctx, query, s.window, "route")
 	if err != nil {
 		return nil, fmt.Errorf("querying haproxy traffic: %w", err)
-	}
-
-	routes, err := s.routeClient.RouteV1().Routes(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("listing routes: %w", err)
-	}
-
-	// A nil map means Prometheus returned no results at all — HAProxy metrics may
-	// not be exposed or may use a different label set. Reporting every route as
-	// unused would be misleading; warn and skip instead.
-	// An empty (non-nil) map means HAProxy is working but no route in this
-	// namespace received any traffic — those routes are still legitimate findings.
-	if traffic == nil && len(routes.Items) > 0 {
-		fmt.Fprintf(os.Stderr, "warning: [%s] no HAProxy traffic metrics found; skipping unused-routes scan\n", namespace)
-		return nil, nil
 	}
 
 	windowDays := fmt.Sprintf("%.0fd", s.window.Hours()/24)

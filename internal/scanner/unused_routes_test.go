@@ -56,25 +56,24 @@ func TestUnusedRoutes_EmptyNamespace(t *testing.T) {
 	}
 }
 
-func TestUnusedRoutes_EmptyTrafficMap_NoFindings(t *testing.T) {
-	// Prometheus reachable but returns empty map — HAProxy metrics likely absent.
-	// Must return zero findings rather than flagging every route as unused.
+func TestUnusedRoutes_HAProxyAbsent_NoFindings(t *testing.T) {
+	// HAProxy not installed: cluster-wide probe returns empty → skip scan, no findings.
 	rc := osroutefake.NewClientset([]runtime.Object{route("my-route", "test")}...)
-	prom := &fakePromRouteClient{data: nil} // nil = Prometheus returned no HAProxy metrics at all
+	prom := &fakePromRouteClient{haproxyExists: false, data: nil}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(findings) != 0 {
-		t.Errorf("got %d findings, want 0 when traffic map is empty", len(findings))
+		t.Errorf("got %d findings, want 0 when HAProxy is absent", len(findings))
 	}
 }
 
 func TestUnusedRoutes_Finding_ZeroTraffic(t *testing.T) {
 	rc := osroutefake.NewClientset([]runtime.Object{route("old-admin", "test")}...)
 	// Route exists but Prometheus returns 0 requests for it.
-	prom := &fakePromRouteClient{data: map[string]float64{"old-admin": 0}}
+	prom := &fakePromRouteClient{haproxyExists: true, data: map[string]float64{"old-admin": 0}}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -101,7 +100,7 @@ func TestUnusedRoutes_Finding_ZeroTraffic(t *testing.T) {
 func TestUnusedRoutes_Finding_AbsentFromMetrics(t *testing.T) {
 	// Route is listed but has no HAProxy metric at all — also a finding.
 	rc := osroutefake.NewClientset([]runtime.Object{route("ghost-route", "test")}...)
-	prom := &fakePromRouteClient{data: map[string]float64{}} // absent
+	prom := &fakePromRouteClient{haproxyExists: true, data: map[string]float64{}} // absent from per-ns metrics
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -114,7 +113,7 @@ func TestUnusedRoutes_Finding_AbsentFromMetrics(t *testing.T) {
 
 func TestUnusedRoutes_NoFinding_HasTraffic(t *testing.T) {
 	rc := osroutefake.NewClientset([]runtime.Object{route("active-app", "test")}...)
-	prom := &fakePromRouteClient{data: map[string]float64{"active-app": 12345}}
+	prom := &fakePromRouteClient{haproxyExists: true, data: map[string]float64{"active-app": 12345}}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -130,7 +129,7 @@ func TestUnusedRoutes_MixedTraffic(t *testing.T) {
 		route("active-app", "test"),
 		route("idle-app", "test"),
 	}...)
-	prom := &fakePromRouteClient{data: map[string]float64{
+	prom := &fakePromRouteClient{haproxyExists: true, data: map[string]float64{
 		"active-app": 5000,
 		"idle-app":   0,
 	}}
@@ -147,15 +146,25 @@ func TestUnusedRoutes_MixedTraffic(t *testing.T) {
 	}
 }
 
-// fakePromRouteClient routes all Increase calls to the data map.
+// fakePromRouteClient dispatches Increase calls by query content.
+// The cluster-wide HAProxy probe (`count by (job)`) returns a non-empty map
+// when haproxyExists is true, simulating a cluster that has HAProxy installed.
+// All other Increase calls return the per-route data map.
 type fakePromRouteClient struct {
-	data map[string]float64
+	haproxyExists bool
+	data          map[string]float64
 }
 
 func (f *fakePromRouteClient) RangeP95(_ context.Context, _ string, _ time.Duration, _ string) (map[string]float64, error) {
 	return nil, nil
 }
 
-func (f *fakePromRouteClient) Increase(_ context.Context, _ string, _ time.Duration, _ string) (map[string]float64, error) {
+func (f *fakePromRouteClient) Increase(_ context.Context, query string, _ time.Duration, _ string) (map[string]float64, error) {
+	if strings.Contains(query, "count by (job)") {
+		if f.haproxyExists {
+			return map[string]float64{"prometheus": 1}, nil
+		}
+		return map[string]float64{}, nil
+	}
 	return f.data, nil
 }
