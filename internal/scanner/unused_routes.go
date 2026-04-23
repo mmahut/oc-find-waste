@@ -58,17 +58,16 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 		return nil, nil
 	}
 
-	wh := fmt.Sprintf("%dh", int(s.window.Hours()))
 	query := fmt.Sprintf(
 		`sum by (route) (increase(haproxy_backend_http_total_requests{exported_namespace=%q}[%s]))`,
-		namespace, wh)
+		namespace, promDuration(s.window))
 
 	traffic, err := s.prom.Increase(ctx, query, s.window, "route")
 	if err != nil {
 		return nil, fmt.Errorf("querying haproxy traffic: %w", err)
 	}
 
-	windowDays := fmt.Sprintf("%.0fd", s.window.Hours()/24)
+	windowLabel := fmtWindow(s.window)
 
 	var findings []Finding
 	for i := range routes.Items {
@@ -80,7 +79,7 @@ func (s *unusedRoutesScanner) Scan(ctx context.Context, namespace string) ([]Fin
 			Kind:       "Route",
 			Namespace:  namespace,
 			Name:       r.Name,
-			Reason:     fmt.Sprintf("0 requests / %s", windowDays),
+			Reason:     fmt.Sprintf("0 requests / %s", windowLabel),
 			Severity:   SeverityInfo,
 			Suggestion: "if the application is decommissioned, delete the Route",
 		})

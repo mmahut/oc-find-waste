@@ -51,7 +51,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		return nil, nil
 	}
 
-	wh := fmt.Sprintf("%dh", int(s.window.Hours()))
+	wh := promDuration(s.window)
 
 	cpuQuery := fmt.Sprintf(
 		`quantile_over_time(0.95,sum by (pod)(rate(container_cpu_usage_seconds_total{namespace=%q,container!="",container!="POD"}[5m]))[%s:5m])`,
