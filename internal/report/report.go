@@ -39,6 +39,16 @@ func renderJSON(w io.Writer, findings []scanner.Finding) error {
 	return enc.Encode(findings)
 }
 
+// wf writes formatted text to w, discarding the error (CLI stdout writes
+// rarely fail; callers have no meaningful recovery path).
+func wf(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
+func wln(w io.Writer, args ...any) {
+	_, _ = fmt.Fprintln(w, args...)
+}
+
 func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	if opts.NoColor {
 		color.NoColor = true
@@ -51,14 +61,14 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	good := color.New(color.FgGreen, color.Bold).SprintFunc()
 
 	if opts.AllNamespaces {
-		fmt.Fprintf(w, "Scanning all namespaces\n")
+		wln(w, "Scanning all namespaces")
 	} else {
-		fmt.Fprintf(w, "Scanning namespace: %s\n", bold(opts.Namespace))
+		wf(w, "Scanning namespace: %s\n", bold(opts.Namespace))
 	}
-	fmt.Fprintf(w, "Window: %s  │  Pricing: %s\n\n", opts.Window, opts.Pricing)
+	wf(w, "Window: %s  │  Pricing: %s\n\n", opts.Window, opts.Pricing)
 
 	if len(findings) == 0 {
-		fmt.Fprintln(w, good("✓ No idle resources found."))
+		wln(w, good("✓ No idle resources found."))
 		return nil
 	}
 
@@ -69,23 +79,20 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 	}
 
 	sep := strings.Repeat("─", 45)
-
-	fmt.Fprintln(w, sep)
+	wln(w, sep)
 
 	var totalCost, savingsCost float64
 	for _, f := range findings {
 		totalCost += f.MonthlyCost
 	}
-	// savings: only findings where Patch/suggestion implies a lower cost
-	// For now, totalCost == waste (all findings contribute); savings is same.
 	savingsCost = totalCost
 
-	fmt.Fprintf(w, "Findings: %d\n", len(findings))
+	wf(w, "Findings: %d\n", len(findings))
 	if totalCost > 0 {
-		fmt.Fprintf(w, "Estimated monthly waste: %s\n", cost(fmt.Sprintf("$%.2f", totalCost)))
+		wf(w, "Estimated monthly waste: %s\n", cost(fmt.Sprintf("$%.2f", totalCost)))
 		if savingsCost > 0 {
 			pct := 100.0
-			fmt.Fprintf(w, "Potential savings:       %s  (%.0f%%)\n",
+			wf(w, "Potential savings:       %s  (%.0f%%)\n",
 				cost(fmt.Sprintf("$%.2f", savingsCost)), pct)
 		}
 	}
@@ -98,10 +105,10 @@ func renderText(w io.Writer, findings []scanner.Finding, opts Options) error {
 			}
 		}
 		if len(patches) > 0 {
-			fmt.Fprintln(w)
-			fmt.Fprintln(w, bold("# Suggested resource patches"))
+			wln(w)
+			wln(w, bold("# Suggested resource patches"))
 			for _, f := range patches {
-				fmt.Fprintf(w, "\n%s\n", f.Patch)
+				wf(w, "\n%s\n", f.Patch)
 			}
 		}
 	}
@@ -121,9 +128,9 @@ func renderTextByKind(w io.Writer, findings []scanner.Finding, bold, dim, arrow,
 		byKind[f.Kind] = append(byKind[f.Kind], f)
 	}
 	for _, k := range kinds {
-		fmt.Fprintln(w, bold(k))
+		wln(w, bold(k))
 		printFindings(w, byKind[k], dim, arrow, cost)
-		fmt.Fprintln(w)
+		wln(w)
 	}
 }
 
@@ -137,7 +144,7 @@ func renderTextByNamespace(w io.Writer, findings []scanner.Finding, bold, dim, a
 		byNS[f.Namespace] = append(byNS[f.Namespace], f)
 	}
 	for _, ns := range namespaces {
-		fmt.Fprintln(w, bold("Namespace: "+ns))
+		wln(w, bold("Namespace: "+ns))
 		renderTextByKind(w, byNS[ns], bold, dim, arrow, cost)
 	}
 }
@@ -148,15 +155,15 @@ func printFindings(w io.Writer, findings []scanner.Finding, dim, arrow, cost col
 		if f.MonthlyCost > 0 {
 			line += fmt.Sprintf("  %s", cost(fmt.Sprintf("$%.2f/mo", f.MonthlyCost)))
 		}
-		fmt.Fprintln(w, line)
+		wln(w, line)
 		if f.Detail != "" {
-			fmt.Fprintln(w, dim("    "+f.Detail))
+			wln(w, dim("    "+f.Detail))
 		}
 		if f.Suggestion != "" {
-			fmt.Fprintln(w, "    "+arrow("→")+" "+f.Suggestion)
+			wln(w, "    "+arrow("→")+" "+f.Suggestion)
 		}
 		if i < len(findings)-1 {
-			fmt.Fprintln(w)
+			wln(w)
 		}
 	}
 }

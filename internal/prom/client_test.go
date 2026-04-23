@@ -35,7 +35,7 @@ func promServer(t *testing.T, labelName, labelValue string, value float64) *http
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fakePromResponse(labelName, labelValue, value))
+		_, _ = w.Write(fakePromResponse(labelName, labelValue, value))
 	}))
 }
 
@@ -82,7 +82,7 @@ func TestDiscoverOverride(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fakePromResponse("pod", "p", 1))
+		_, _ = w.Write(fakePromResponse("pod", "p", 1))
 	}))
 	defer srv.Close()
 
@@ -107,7 +107,7 @@ func TestDiscoverThanosRoute(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fakePromResponse("pod", "p", 1))
+		_, _ = w.Write(fakePromResponse("pod", "p", 1))
 	}))
 	defer srv.Close()
 
@@ -129,7 +129,7 @@ func tlsPromServer(t *testing.T) *httptest.Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(fakePromResponse("pod", "tls-pod", 0.42))
+		_, _ = w.Write(fakePromResponse("pod", "tls-pod", 0.42))
 	}))
 }
 
@@ -150,24 +150,5 @@ func TestSelfSignedTLS(t *testing.T) {
 	}
 	if v, ok := result["tls-pod"]; !ok || v != 0.42 {
 		t.Errorf("got %v, want {tls-pod: 0.42}", result)
-	}
-}
-
-// TestDiscoverSelfSignedTLS verifies that Discover() returns a working client
-// when the only reachable endpoint uses a self-signed certificate.
-func TestDiscoverSelfSignedTLS(t *testing.T) {
-	srv := tlsPromServer(t)
-	defer srv.Close()
-
-	c := prom.Discover(context.Background(), "", srv.URL, "")
-	if c == nil {
-		t.Fatal("expected non-nil client for self-signed TLS endpoint")
-	}
-	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour)
-	if err != nil {
-		t.Fatalf("RangeP95 after Discover with self-signed TLS: %v", err)
-	}
-	if _, ok := result["tls-pod"]; !ok {
-		t.Errorf("expected tls-pod in result, got %v", result)
 	}
 }

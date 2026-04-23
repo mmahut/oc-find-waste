@@ -18,15 +18,17 @@ var defaultURLs = []string{
 // Discover returns a working Prometheus Client or nil.
 //
 // Order of preference:
-//  1. overrideURL (from --prometheus-url flag) — used as-is, no probing
-//  2. thanosRouteURL — external thanos-querier Route discovered by the caller
-//  3. defaultURLs — in-cluster service endpoints tried in order
+//  1. overrideURL (from --prometheus-url flag) — full TLS verification
+//  2. thanosRouteURL — external Route, full TLS verification
+//  3. defaultURLs — in-cluster .svc endpoints, TLS skip (self-signed cluster CA)
+//
+// External URLs (1 and 2) never use InsecureSkipVerify so bearer tokens are
+// not sent to endpoints with invalid certificates. Only in-cluster .svc
+// endpoints skip verification.
 //
 // When nil is returned a warning has already been printed to stderr.
 func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken string) Client {
 	if overrideURL != "" {
-		// User-supplied URL: enforce TLS verification so the bearer token is
-		// never sent to an endpoint with an invalid certificate.
 		c, err := New(overrideURL, bearerToken, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: prometheus override URL unusable: %v\n", err)
@@ -35,17 +37,19 @@ func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken stri
 		return c
 	}
 
-	candidates := defaultURLs
+	// External Thanos route: enforce TLS so the bearer token is safe.
 	if thanosRouteURL != "" {
-		candidates = append([]string{thanosRouteURL}, candidates...)
+		if probeHealthy(ctx, thanosRouteURL, bearerToken, false) {
+			if c, err := New(thanosRouteURL, bearerToken, false); err == nil {
+				return c
+			}
+		}
 	}
 
-	for _, u := range candidates {
-		if probeHealthy(ctx, u, bearerToken) {
-			// Already probed with InsecureSkipVerify; use the same policy for
-			// queries so in-cluster self-signed certs don't cause x509 errors.
-			c, err := New(u, bearerToken, true)
-			if err == nil {
+	// In-cluster service endpoints: skip TLS (self-signed cluster CA is expected).
+	for _, u := range defaultURLs {
+		if probeHealthy(ctx, u, bearerToken, true) {
+			if c, err := New(u, bearerToken, true); err == nil {
 				return c
 			}
 		}
@@ -56,8 +60,8 @@ func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken stri
 }
 
 // probeHealthy does a lightweight GET to /-/healthy with a short timeout.
-// It skips TLS verification because in-cluster endpoints use self-signed certs.
-func probeHealthy(ctx context.Context, url, token string) bool {
+// Pass insecureTLS=true only for in-cluster endpoints that use self-signed certs.
+func probeHealthy(ctx context.Context, url, token string, insecureTLS bool) bool {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
@@ -69,10 +73,14 @@ func probeHealthy(ctx context.Context, url, token string) bool {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := (&http.Client{Transport: insecureTransport()}).Do(req)
+	transport := http.RoundTripper(http.DefaultTransport)
+	if insecureTLS {
+		transport = insecureTransport()
+	}
+	resp, err := (&http.Client{Transport: transport}).Do(req)
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	return resp.StatusCode < 300
 }
