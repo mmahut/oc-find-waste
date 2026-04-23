@@ -25,7 +25,9 @@ var defaultURLs = []string{
 // When nil is returned a warning has already been printed to stderr.
 func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken string) Client {
 	if overrideURL != "" {
-		c, err := New(overrideURL, bearerToken)
+		// User-supplied URL: enforce TLS verification so the bearer token is
+		// never sent to an endpoint with an invalid certificate.
+		c, err := New(overrideURL, bearerToken, false)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: prometheus override URL unusable: %v\n", err)
 			return nil
@@ -40,7 +42,9 @@ func Discover(ctx context.Context, overrideURL, thanosRouteURL, bearerToken stri
 
 	for _, u := range candidates {
 		if probeHealthy(ctx, u, bearerToken) {
-			c, err := New(u, bearerToken)
+			// Already probed with InsecureSkipVerify; use the same policy for
+			// queries so in-cluster self-signed certs don't cause x509 errors.
+			c, err := New(u, bearerToken, true)
 			if err == nil {
 				return c
 			}

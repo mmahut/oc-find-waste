@@ -36,11 +36,17 @@ func insecureTransport() *http.Transport {
 	return &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 }
 
-// New creates a Client that queries the given Prometheus URL with an optional
-// bearer token. TLS verification is skipped for in-cluster endpoints that use
-// self-signed certificates signed by the cluster CA.
-func New(url, bearerToken string) (Client, error) {
-	var rt http.RoundTripper = insecureTransport()
+// New creates a Client for url. Set insecureTLS to true only for in-cluster
+// endpoints that use self-signed certificates — this skips certificate
+// verification for the bearer token request, so it must not be used for
+// user-supplied or externally-reachable URLs.
+func New(url, bearerToken string, insecureTLS bool) (Client, error) {
+	var rt http.RoundTripper
+	if insecureTLS {
+		rt = insecureTransport()
+	} else {
+		rt = http.DefaultTransport
+	}
 	if bearerToken != "" {
 		rt = &bearerRT{token: bearerToken, inner: rt}
 	}

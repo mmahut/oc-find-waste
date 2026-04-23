@@ -43,7 +43,7 @@ func TestClientRangeP95(t *testing.T) {
 	srv := promServer(t, "pod", "my-pod", 0.18)
 	defer srv.Close()
 
-	c, err := prom.New(srv.URL, "")
+	c, err := prom.New(srv.URL, "", false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestClientIncrease(t *testing.T) {
 	srv := promServer(t, "route", "my-route", 42)
 	defer srv.Close()
 
-	c, err := prom.New(srv.URL, "")
+	c, err := prom.New(srv.URL, "", false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSelfSignedTLS(t *testing.T) {
 	srv := tlsPromServer(t)
 	defer srv.Close()
 
-	c, err := prom.New(srv.URL, "")
+	c, err := prom.New(srv.URL, "", true)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
