@@ -157,10 +157,11 @@ func markISRef(ref *corev1.ObjectReference, namespace string, referenced map[str
 	}
 }
 
-// isNameFromISTag extracts the ImageStream name from an ImageStreamTag reference.
-// Accepts "name:tag" and "namespace/name:tag". When a namespace prefix is present
-// it must match the scanned namespace; otherwise the reference is cross-namespace
-// and an empty string is returned.
+// isNameFromISRef extracts the ImageStream name from an ImageStreamTag or
+// ImageStreamImage reference. Accepts "name:tag", "name@sha256:digest", and
+// "namespace/name:tag" / "namespace/name@sha256:digest". When a namespace prefix
+// is present it must match the scanned namespace; otherwise the reference is
+// cross-namespace and an empty string is returned.
 func isNameFromISTag(ref, namespace string) string {
 	if i := strings.LastIndex(ref, "/"); i >= 0 {
 		if ref[:i] != namespace {
@@ -168,7 +169,7 @@ func isNameFromISTag(ref, namespace string) string {
 		}
 		ref = ref[i+1:]
 	}
-	if i := strings.Index(ref, ":"); i >= 0 {
+	if i := strings.IndexAny(ref, ":@"); i >= 0 {
 		ref = ref[:i]
 	}
 	return ref
