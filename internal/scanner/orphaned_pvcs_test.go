@@ -98,7 +98,7 @@ func TestOrphanedPVCs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset(tt.objects...)
+			client := fake.NewClientset(tt.objects...)
 			s := scanner.NewOrphanedPVCs(client, nil)
 			findings, err := s.Scan(context.Background(), "test")
 			if err != nil {
@@ -122,7 +122,7 @@ func TestOrphanedPVCs_Cost(t *testing.T) {
 		t.Fatalf("loading aws profile: %v", err)
 	}
 
-	client := fake.NewSimpleClientset(boundPVC("big-data", "50Gi"))
+	client := fake.NewClientset(boundPVC("big-data", "50Gi"))
 	s := scanner.NewOrphanedPVCs(client, profile)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -144,7 +144,7 @@ func TestOrphanedPVCs_OnPremNoCost(t *testing.T) {
 		t.Fatalf("loading on-prem profile: %v", err)
 	}
 
-	client := fake.NewSimpleClientset(boundPVC("big-data", "50Gi"))
+	client := fake.NewClientset(boundPVC("big-data", "50Gi"))
 	s := scanner.NewOrphanedPVCs(client, profile)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {

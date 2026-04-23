@@ -2,7 +2,6 @@ package prom
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -66,9 +65,7 @@ func probeHealthy(ctx context.Context, url, token string) bool {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	//nolint:gosec // self-signed cluster CA; token auth provides identity assurance
-	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-	resp, err := (&http.Client{Transport: tr}).Do(req)
+	resp, err := (&http.Client{Transport: insecureTransport()}).Do(req)
 	if err != nil {
 		return false
 	}

@@ -106,9 +106,9 @@ func TestUnusedImageStreams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			imageClient := osimagefake.NewSimpleClientset(tt.imageObjs...)
-			k8sClient := fake.NewSimpleClientset(tt.k8sObjs...)
-			buildClient := osbuildfake.NewSimpleClientset(tt.buildObjs...)
+			imageClient := osimagefake.NewClientset(tt.imageObjs...)
+			k8sClient := fake.NewClientset(tt.k8sObjs...)
+			buildClient := osbuildfake.NewClientset(tt.buildObjs...)
 
 			s := scanner.NewUnusedImageStreams(k8sClient, imageClient, buildClient)
 			findings, err := s.Scan(context.Background(), testNS)
@@ -133,7 +133,7 @@ func TestUnusedImageStreams(t *testing.T) {
 	}
 
 	t.Run("nil imageClient no-ops", func(t *testing.T) {
-		s := scanner.NewUnusedImageStreams(fake.NewSimpleClientset(), nil, nil)
+		s := scanner.NewUnusedImageStreams(fake.NewClientset(), nil, nil)
 		findings, err := s.Scan(context.Background(), testNS)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

@@ -87,7 +87,7 @@ func TestScaledToZero(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset(tt.objects...)
+			client := fake.NewClientset(tt.objects...)
 			s := scanner.NewScaledToZero(client, nil) // nil = no OCP
 			findings, err := s.Scan(context.Background(), "test")
 			if err != nil {
@@ -114,8 +114,8 @@ func TestScaledToZero_OpenShift(t *testing.T) {
 	longAgo := metav1.NewTime(time.Now().Add(-10 * 24 * time.Hour))
 
 	t.Run("dc scaled to zero — finding", func(t *testing.T) {
-		k8sClient := fake.NewSimpleClientset()
-		ocpClient := osappsfake.NewSimpleClientset(
+		k8sClient := fake.NewClientset()
+		ocpClient := osappsfake.NewClientset(
 			&osappsv1.DeploymentConfig{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "idle-dc", Namespace: "test",
@@ -138,8 +138,8 @@ func TestScaledToZero_OpenShift(t *testing.T) {
 	})
 
 	t.Run("dc running — no finding", func(t *testing.T) {
-		k8sClient := fake.NewSimpleClientset()
-		ocpClient := osappsfake.NewSimpleClientset(
+		k8sClient := fake.NewClientset()
+		ocpClient := osappsfake.NewClientset(
 			&osappsv1.DeploymentConfig{
 				ObjectMeta: metav1.ObjectMeta{Name: "active-dc", Namespace: "test"},
 				Spec:       osappsv1.DeploymentConfigSpec{Replicas: 3},
@@ -156,7 +156,7 @@ func TestScaledToZero_OpenShift(t *testing.T) {
 	})
 
 	t.Run("nil appsClient — no dc scanning", func(t *testing.T) {
-		k8sClient := fake.NewSimpleClientset()
+		k8sClient := fake.NewClientset()
 		s := scanner.NewScaledToZero(k8sClient, nil)
 		findings, err := s.Scan(context.Background(), "test")
 		if err != nil {

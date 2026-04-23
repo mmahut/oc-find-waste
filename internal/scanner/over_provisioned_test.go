@@ -85,7 +85,7 @@ func deployment(name, ns string, replicas int32) *appsv1.Deployment {
 }
 
 func TestOverProvisioned_Empty(t *testing.T) {
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 	prom := &fakePromClient{cpu: map[string]float64{}, mem: map[string]float64{}}
 	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
@@ -98,7 +98,7 @@ func TestOverProvisioned_Empty(t *testing.T) {
 }
 
 func TestOverProvisioned_NilProm(t *testing.T) {
-	client := fake.NewSimpleClientset()
+	client := fake.NewClientset()
 	s := scanner.NewOverProvisioned(client, nil, nil, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -115,7 +115,7 @@ func TestOverProvisioned_Finding(t *testing.T) {
 	rs := replicaSet("web-rs", "test", "web-app")
 	dep := deployment("web-app", "test", 3)
 
-	client := fake.NewSimpleClientset([]runtime.Object{pod, rs, dep}...)
+	client := fake.NewClientset([]runtime.Object{pod, rs, dep}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"web-pod": 0.18},      // 180m
 		mem: map[string]float64{"web-pod": 629145600}, // 600Mi
@@ -148,7 +148,7 @@ func TestOverProvisioned_NoFindingWhenAdequate(t *testing.T) {
 	// Pod requests 2000m CPU; p95 is 800m (40% > 30% threshold) — not over-provisioned.
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
 
-	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"web-pod": 0.80},            // 800m = 40% of 2000m
 		mem: map[string]float64{"web-pod": 1.5 * (1 << 30)}, // 1.5Gi = 37.5% of 4Gi
@@ -187,7 +187,7 @@ func TestOverProvisioned_TooYoung(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"new-pod": 0.01},
 		mem: map[string]float64{"new-pod": 1},
@@ -214,7 +214,7 @@ func TestOverProvisioned_Cost(t *testing.T) {
 	// wasted CPU = 2.0 - 0.27 = 1.73 cores; wasted mem = 4Gi - 1Gi = 3Gi.
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
 
-	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"web-pod": 0.18},      // 180m
 		mem: map[string]float64{"web-pod": 629145600}, // 600Mi
@@ -239,7 +239,7 @@ func TestOverProvisioned_Cost(t *testing.T) {
 func TestFmtHelpers(t *testing.T) {
 	// Indirectly tested via finding Detail strings.
 	pod := oldPod("p", "test", "2", "2Gi", "", "", "")
-	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"p": 0.1},
 		mem: map[string]float64{"p": 100 * (1 << 20)}, // 100Mi
@@ -270,7 +270,7 @@ func TestFmtHelpers(t *testing.T) {
 func TestOverProvisioned_Patch(t *testing.T) {
 	// Single container pod: patch should name the container and set suggested requests.
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
-	client := fake.NewSimpleClientset([]runtime.Object{pod}...)
+	client := fake.NewClientset([]runtime.Object{pod}...)
 	prom := &fakePromClient{
 		cpu: map[string]float64{"web-pod": 0.18},      // 180m
 		mem: map[string]float64{"web-pod": 629145600}, // 600Mi

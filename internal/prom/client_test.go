@@ -117,3 +117,57 @@ func TestDiscoverThanosRoute(t *testing.T) {
 		t.Fatal("expected non-nil client when thanos route URL is reachable")
 	}
 }
+
+// tlsPromServer returns an httptest.NewTLSServer that mimics a Prometheus
+// endpoint with a self-signed certificate (the same situation as in-cluster
+// OpenShift monitoring endpoints).
+func tlsPromServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/-/healthy" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(fakePromResponse("pod", "tls-pod", 0.42))
+	}))
+}
+
+// TestSelfSignedTLS verifies that New() can query a Prometheus endpoint that
+// presents a self-signed certificate. This would fail with x509 errors if
+// New() used the default TLS-verifying transport.
+func TestSelfSignedTLS(t *testing.T) {
+	srv := tlsPromServer(t)
+	defer srv.Close()
+
+	c, err := prom.New(srv.URL, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("RangeP95 against self-signed TLS server: %v", err)
+	}
+	if v, ok := result["tls-pod"]; !ok || v != 0.42 {
+		t.Errorf("got %v, want {tls-pod: 0.42}", result)
+	}
+}
+
+// TestDiscoverSelfSignedTLS verifies that Discover() returns a working client
+// when the only reachable endpoint uses a self-signed certificate.
+func TestDiscoverSelfSignedTLS(t *testing.T) {
+	srv := tlsPromServer(t)
+	defer srv.Close()
+
+	c := prom.Discover(context.Background(), "", srv.URL, "")
+	if c == nil {
+		t.Fatal("expected non-nil client for self-signed TLS endpoint")
+	}
+	result, err := c.RangeP95(context.Background(), "test_query", 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("RangeP95 after Discover with self-signed TLS: %v", err)
+	}
+	if _, ok := result["tls-pod"]; !ok {
+		t.Errorf("expected tls-pod in result, got %v", result)
+	}
+}

@@ -2,6 +2,7 @@ package prom
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"os"
@@ -26,11 +27,20 @@ type promClient struct {
 	api promv1.API
 }
 
+// insecureTransport returns an HTTP transport that skips TLS verification.
+// Used for both health probes and real queries so discovery and query use
+// identical TLS policy on clusters with self-signed certificates.
+//
+//nolint:gosec // self-signed cluster CA; token auth provides identity assurance
+func insecureTransport() *http.Transport {
+	return &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+}
+
 // New creates a Client that queries the given Prometheus URL with an optional
 // bearer token. TLS verification is skipped for in-cluster endpoints that use
 // self-signed certificates signed by the cluster CA.
 func New(url, bearerToken string) (Client, error) {
-	rt := promapi.DefaultRoundTripper
+	var rt http.RoundTripper = insecureTransport()
 	if bearerToken != "" {
 		rt = &bearerRT{token: bearerToken, inner: rt}
 	}

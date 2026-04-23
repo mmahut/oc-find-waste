@@ -13,6 +13,7 @@ import (
 	osimagev1client "github.com/openshift/client-go/image/clientset/versioned"
 	osroutev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/spf13/cobra"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -224,6 +225,12 @@ func runScan(opts *scanOptions) error {
 			}
 			ff, scanErr := s.Scan(ctx, namespace)
 			if scanErr != nil {
+				if opts.allNamespaces && (k8serrors.IsForbidden(scanErr) || k8serrors.IsUnauthorized(scanErr)) {
+					if opts.verbose {
+						fmt.Fprintf(os.Stderr, "[%s] scanner %s: skipped (no access)\n", namespace, s.Name())
+					}
+					continue
+				}
 				fmt.Fprintf(os.Stderr, "warning: [%s] scanner %s: %v\n", namespace, s.Name(), scanErr)
 				hadErr = true
 				continue

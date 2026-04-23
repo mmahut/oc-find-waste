@@ -48,7 +48,7 @@ func TestIsOpenShift(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset()
+			client := fake.NewClientset()
 			client.Resources = tt.resources
 			got := ocp.IsOpenShift(client.Discovery())
 			if got != tt.want {

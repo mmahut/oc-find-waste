@@ -32,7 +32,7 @@ func TestUnusedRoutes_NilClients(t *testing.T) {
 }
 
 func TestUnusedRoutes_NilPromClient(t *testing.T) {
-	rc := osroutefake.NewSimpleClientset(route("my-route", "test"))
+	rc := osroutefake.NewClientset(route("my-route", "test"))
 	s := scanner.NewUnusedRoutes(rc, nil, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
 	if err != nil {
@@ -44,7 +44,7 @@ func TestUnusedRoutes_NilPromClient(t *testing.T) {
 }
 
 func TestUnusedRoutes_EmptyNamespace(t *testing.T) {
-	rc := osroutefake.NewSimpleClientset()
+	rc := osroutefake.NewClientset()
 	prom := &fakePromClient{cpu: map[string]float64{}, mem: map[string]float64{}}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
@@ -57,7 +57,7 @@ func TestUnusedRoutes_EmptyNamespace(t *testing.T) {
 }
 
 func TestUnusedRoutes_Finding_ZeroTraffic(t *testing.T) {
-	rc := osroutefake.NewSimpleClientset([]runtime.Object{route("old-admin", "test")}...)
+	rc := osroutefake.NewClientset([]runtime.Object{route("old-admin", "test")}...)
 	// Route exists but Prometheus returns 0 requests for it.
 	prom := &fakePromRouteClient{data: map[string]float64{"old-admin": 0}}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
@@ -85,7 +85,7 @@ func TestUnusedRoutes_Finding_ZeroTraffic(t *testing.T) {
 
 func TestUnusedRoutes_Finding_AbsentFromMetrics(t *testing.T) {
 	// Route is listed but has no HAProxy metric at all — also a finding.
-	rc := osroutefake.NewSimpleClientset([]runtime.Object{route("ghost-route", "test")}...)
+	rc := osroutefake.NewClientset([]runtime.Object{route("ghost-route", "test")}...)
 	prom := &fakePromRouteClient{data: map[string]float64{}} // absent
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
@@ -98,7 +98,7 @@ func TestUnusedRoutes_Finding_AbsentFromMetrics(t *testing.T) {
 }
 
 func TestUnusedRoutes_NoFinding_HasTraffic(t *testing.T) {
-	rc := osroutefake.NewSimpleClientset([]runtime.Object{route("active-app", "test")}...)
+	rc := osroutefake.NewClientset([]runtime.Object{route("active-app", "test")}...)
 	prom := &fakePromRouteClient{data: map[string]float64{"active-app": 12345}}
 	s := scanner.NewUnusedRoutes(rc, prom, 7*24*time.Hour)
 	findings, err := s.Scan(context.Background(), "test")
@@ -111,7 +111,7 @@ func TestUnusedRoutes_NoFinding_HasTraffic(t *testing.T) {
 }
 
 func TestUnusedRoutes_MixedTraffic(t *testing.T) {
-	rc := osroutefake.NewSimpleClientset([]runtime.Object{
+	rc := osroutefake.NewClientset([]runtime.Object{
 		route("active-app", "test"),
 		route("idle-app", "test"),
 	}...)

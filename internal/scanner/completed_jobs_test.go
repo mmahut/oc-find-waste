@@ -76,7 +76,7 @@ func TestCompletedJobs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset(tt.objects...)
+			client := fake.NewClientset(tt.objects...)
 			s := scanner.NewCompletedJobs(client)
 			findings, err := s.Scan(context.Background(), "test")
 			if err != nil {
