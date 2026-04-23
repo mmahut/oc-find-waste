@@ -36,7 +36,11 @@ func Load(nameOrPath string) (*Profile, error) {
 
 // BuiltinNames returns the keys of all embedded profiles.
 func BuiltinNames() []string {
-	entries, _ := profileFS.ReadDir("profiles")
+	entries, err := profileFS.ReadDir("profiles")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: listing embedded pricing profiles: %v\n", err)
+		return nil
+	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
 		n := e.Name()
