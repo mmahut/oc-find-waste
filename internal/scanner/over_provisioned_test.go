@@ -109,6 +109,20 @@ func TestOverProvisioned_NilProm(t *testing.T) {
 	}
 }
 
+func TestOverProvisioned_NoDataInProm(t *testing.T) {
+	pod := oldPod("web-pod", "test", "2000m", "4Gi", "", "", "")
+	client := fake.NewClientset([]runtime.Object{pod}...)
+	prom := &fakePromClient{cpu: map[string]float64{}, mem: map[string]float64{}}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("got %d findings, want 0 (no Prometheus data = no opinion)", len(findings))
+	}
+}
+
 func TestOverProvisioned_Finding(t *testing.T) {
 	// Pod requests 2000m CPU, 4Gi RAM; p95 is 180m CPU, 600Mi RAM (both < 30%).
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "ReplicaSet", "web-rs", "uid-web-rs")

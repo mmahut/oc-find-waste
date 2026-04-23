@@ -116,11 +116,11 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 
 		reqCPU := float64(reqCPUm) / 1000
 		reqMem := float64(reqMemB)
-		p95CPU := cpuP95[pod.Name]
-		p95Mem := memP95[pod.Name]
+		p95CPU, haveCPU := cpuP95[pod.Name]
+		p95Mem, haveMem := memP95[pod.Name]
 
-		cpuOver := reqCPUm > 0 && p95CPU < overProvisionedThreshold*reqCPU
-		memOver := reqMemB > 0 && p95Mem < overProvisionedThreshold*reqMem
+		cpuOver := haveCPU && reqCPUm > 0 && p95CPU < overProvisionedThreshold*reqCPU
+		memOver := haveMem && reqMemB > 0 && p95Mem < overProvisionedThreshold*reqMem
 		if !cpuOver && !memOver {
 			continue
 		}
