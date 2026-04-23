@@ -74,17 +74,16 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		return nil, fmt.Errorf("listing pods: %w", err)
 	}
 
-	type podStats struct {
-		reqCPU float64 // cores
-		reqMem float64 // bytes
-		p95CPU float64 // cores
-		p95Mem float64 // bytes
-	}
 	type ownerEntry struct {
 		kind       string
 		name       string
 		replicas   int32
-		stats      podStats
+		reqCPU     float64 // per-pod request (uniform across replicas), cores
+		reqMem     float64 // per-pod request, bytes
+		maxP95CPU  float64 // max observed p95 across all pods, cores
+		maxP95Mem  float64 // max observed p95 across all pods, bytes
+		haveCPU    bool    // ≥1 pod had CPU data from Prometheus
+		haveMem    bool
 		containers []containerReq
 	}
 	owners := make(map[string]*ownerEntry)
@@ -119,46 +118,57 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		p95CPU, haveCPU := cpuP95[pod.Name]
 		p95Mem, haveMem := memP95[pod.Name]
 
-		cpuOver := haveCPU && reqCPUm > 0 && p95CPU < overProvisionedThreshold*reqCPU
-		memOver := haveMem && reqMemB > 0 && p95Mem < overProvisionedThreshold*reqMem
-		if !cpuOver && !memOver {
-			continue
-		}
-
 		kind, name, replicas := s.resolveOwner(ctx, pod, namespace)
 		key := kind + "/" + name
-		if _, seen := owners[key]; !seen {
-			owners[key] = &ownerEntry{
+		e, seen := owners[key]
+		if !seen {
+			e = &ownerEntry{
 				kind: kind, name: name, replicas: replicas,
-				stats:      podStats{reqCPU: reqCPU, reqMem: reqMem, p95CPU: p95CPU, p95Mem: p95Mem},
-				containers: containers,
+				reqCPU: reqCPU, reqMem: reqMem, containers: containers,
+			}
+			owners[key] = e
+		}
+		if haveCPU {
+			e.haveCPU = true
+			if p95CPU > e.maxP95CPU {
+				e.maxP95CPU = p95CPU
+			}
+		}
+		if haveMem {
+			e.haveMem = true
+			if p95Mem > e.maxP95Mem {
+				e.maxP95Mem = p95Mem
 			}
 		}
 	}
 
 	var findings []Finding
 	for _, o := range owners {
-		st := o.stats
+		cpuOver := o.haveCPU && o.reqCPU > 0 && o.maxP95CPU < overProvisionedThreshold*o.reqCPU
+		memOver := o.haveMem && o.reqMem > 0 && o.maxP95Mem < overProvisionedThreshold*o.reqMem
+		if !cpuOver && !memOver {
+			continue
+		}
 
-		// Suggested = ceil(p95 * 1.5) with reasonable granularity.
-		sugCPU := math.Ceil(st.p95CPU*1.5*1000) / 1000 // round to millicore
-		sugMem := math.Ceil(st.p95Mem*1.5/(1<<20)) * (1 << 20)
+		// Suggested = ceil(maxP95 * 1.5) with reasonable granularity.
+		sugCPU := math.Ceil(o.maxP95CPU*1.5*1000) / 1000 // round to millicore
+		sugMem := math.Ceil(o.maxP95Mem*1.5/(1<<20)) * (1 << 20)
 
 		detail := fmt.Sprintf("requests: %s CPU, %s RAM  │  p95 usage: %s CPU, %s RAM",
-			fmtCPU(st.reqCPU), fmtMem(st.reqMem),
-			fmtCPU(st.p95CPU), fmtMem(st.p95Mem))
+			fmtCPU(o.reqCPU), fmtMem(o.reqMem),
+			fmtCPU(o.maxP95CPU), fmtMem(o.maxP95Mem))
 
 		suggestion := fmt.Sprintf("suggest: %s CPU, %s RAM", fmtCPU(sugCPU), fmtMem(sugMem))
 
 		var monthlyCost float64
 		if s.pricing != nil {
-			wastedCPU := math.Max(0, st.reqCPU-sugCPU)
-			wastedMemGiB := math.Max(0, (st.reqMem-sugMem)/(1<<30))
+			wastedCPU := math.Max(0, o.reqCPU-sugCPU)
+			wastedMemGiB := math.Max(0, (o.reqMem-sugMem)/(1<<30))
 			costPerPod := s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGiB)
 			monthlyCost = costPerPod * float64(o.replicas)
 
 			if monthlyCost > 0 {
-				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(st.reqCPU, st.reqMem/(1<<30))
+				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(o.reqCPU, o.reqMem/(1<<30))
 				sugCostPerPod := s.pricing.WorkloadMonthlyUSD(sugCPU, sugMem/(1<<30))
 				var savingsPct float64
 				if reqCostPerPod > 0 {
@@ -168,7 +178,7 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 			}
 		}
 
-		patch := buildRightsizePatch(o.kind, o.name, namespace, sugCPU, sugMem, o.containers, st.reqCPU, st.reqMem)
+		patch := buildRightsizePatch(o.kind, o.name, namespace, sugCPU, sugMem, o.containers, o.reqCPU, o.reqMem)
 
 		findings = append(findings, Finding{
 			Kind:        o.kind,

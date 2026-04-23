@@ -123,6 +123,29 @@ func TestOverProvisioned_NoDataInProm(t *testing.T) {
 	}
 }
 
+func TestOverProvisioned_MixedReplicas_OneBusy(t *testing.T) {
+	// pod-a is very idle, pod-b is above the threshold (50% CPU, 50% RAM).
+	// Old code: first-pod-wins → finding based on pod-a.
+	// New code: max-p95 → no finding (busiest replica is not over-provisioned).
+	podA := oldPod("pod-a", "test", "2000m", "4Gi", "ReplicaSet", "web-rs", "uid-web-rs")
+	podB := oldPod("pod-b", "test", "2000m", "4Gi", "ReplicaSet", "web-rs", "uid-web-rs")
+	rs := replicaSet("web-rs", "test", "web-app")
+	dep := deployment("web-app", "test", 2)
+	client := fake.NewClientset([]runtime.Object{podA, podB, rs, dep}...)
+	prom := &fakePromClient{
+		cpu: map[string]float64{"pod-a": 0.05, "pod-b": 1.00}, // pod-b at 50% — above threshold
+		mem: map[string]float64{"pod-a": 100 * (1 << 20), "pod-b": 2 * (1 << 30)},
+	}
+	s := scanner.NewOverProvisioned(client, prom, nil, 7*24*time.Hour)
+	findings, err := s.Scan(context.Background(), "test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("got %d findings, want 0 (busiest replica is not over-provisioned)", len(findings))
+	}
+}
+
 func TestOverProvisioned_Finding(t *testing.T) {
 	// Pod requests 2000m CPU, 4Gi RAM; p95 is 180m CPU, 600Mi RAM (both < 30%).
 	pod := oldPod("web-pod", "test", "2000m", "4Gi", "ReplicaSet", "web-rs", "uid-web-rs")
