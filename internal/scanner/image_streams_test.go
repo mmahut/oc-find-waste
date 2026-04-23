@@ -83,10 +83,11 @@ func TestUnusedImageStreams(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name:      "buildconfig with cross-namespace ref — no finding",
-			imageObjs: []runtime.Object{imageStream("shared-app")},
-			buildObjs: []runtime.Object{buildConfig("other-ns/shared-app:latest")},
-			wantCount: 0,
+			name:        "buildconfig with cross-namespace embedded ref — IS still unused",
+			imageObjs:   []runtime.Object{imageStream("shared-app")},
+			buildObjs:   []runtime.Object{buildConfig("other-ns/shared-app:latest")},
+			wantCount:   1,
+			wantFinding: "shared-app",
 		},
 		{
 			name:      "imagestream used as s2i builder base (SourceStrategy.From) — no finding",
@@ -162,4 +163,36 @@ func TestUnusedImageStreams(t *testing.T) {
 			t.Errorf("expected 0 findings with nil client, got %d", len(findings))
 		}
 	})
+}
+
+func TestUnusedImageStreams_CrossNamespaceRef_NotMarked(t *testing.T) {
+	// A BuildConfig in the scanned namespace references an IS from another namespace
+	// via the explicit Namespace field of the ObjectReference.
+	// The local IS with the same short name must still be reported as unused.
+	bc := &osbuildv1.BuildConfig{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-build", Namespace: testNS},
+	}
+	bc.Spec.Strategy.SourceStrategy = &osbuildv1.SourceBuildStrategy{
+		From: corev1.ObjectReference{
+			Kind:      "ImageStreamTag",
+			Namespace: "other-ns", // explicit cross-namespace
+			Name:      "shared-is:latest",
+		},
+	}
+
+	imageClient := osimagefake.NewClientset(imageStream("shared-is"))
+	k8sClient := fake.NewClientset()
+	buildClient := osbuildfake.NewClientset(bc)
+
+	s := scanner.NewUnusedImageStreams(k8sClient, imageClient, buildClient)
+	findings, err := s.Scan(context.Background(), testNS)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (cross-namespace ref must not protect local IS)", len(findings))
+	}
+	if findings[0].Name != "shared-is" {
+		t.Errorf("expected finding for shared-is, got %q", findings[0].Name)
+	}
 }

@@ -72,18 +72,18 @@ func (s *unusedImageStreamsScanner) Scan(ctx context.Context, namespace string) 
 		} else {
 			for i := range bcs.Items {
 				bc := &bcs.Items[i]
-				markISRef(bc.Spec.Output.To, referenced)
+				markISRef(bc.Spec.Output.To, namespace, referenced)
 				if bc.Spec.Strategy.SourceStrategy != nil {
-					markISRef(&bc.Spec.Strategy.SourceStrategy.From, referenced)
+					markISRef(&bc.Spec.Strategy.SourceStrategy.From, namespace, referenced)
 				}
 				if bc.Spec.Strategy.DockerStrategy != nil {
-					markISRef(bc.Spec.Strategy.DockerStrategy.From, referenced)
+					markISRef(bc.Spec.Strategy.DockerStrategy.From, namespace, referenced)
 				}
 				if bc.Spec.Strategy.CustomStrategy != nil {
-					markISRef(&bc.Spec.Strategy.CustomStrategy.From, referenced)
+					markISRef(&bc.Spec.Strategy.CustomStrategy.From, namespace, referenced)
 				}
 				for j := range bc.Spec.Source.Images {
-					markISRef(&bc.Spec.Source.Images[j].From, referenced)
+					markISRef(&bc.Spec.Source.Images[j].From, namespace, referenced)
 				}
 			}
 		}
@@ -137,24 +137,35 @@ func isNameFromImage(image, namespace string) string {
 	return rest
 }
 
-// markISRef marks an ImageStream referenced by an ObjectReference as used.
-// Recognises both ImageStreamTag and ImageStreamImage kinds.
-func markISRef(ref *corev1.ObjectReference, referenced map[string]bool) {
+// markISRef marks an ImageStream referenced by an ObjectReference as used,
+// but only if the reference is scoped to the scanned namespace.
+// Cross-namespace refs (via ref.Namespace or an embedded "ns/name:tag" prefix)
+// must not shield a same-named local ImageStream from being reported unused.
+func markISRef(ref *corev1.ObjectReference, namespace string, referenced map[string]bool) {
 	if ref == nil {
 		return
 	}
 	if ref.Kind != "ImageStreamTag" && ref.Kind != "ImageStreamImage" {
 		return
 	}
-	if name := isNameFromISTag(ref.Name); name != "" {
+	// Explicit cross-namespace reference via the Namespace field.
+	if ref.Namespace != "" && ref.Namespace != namespace {
+		return
+	}
+	if name := isNameFromISTag(ref.Name, namespace); name != "" {
 		referenced[name] = true
 	}
 }
 
 // isNameFromISTag extracts the ImageStream name from an ImageStreamTag reference.
-// Accepts "name:tag" and "namespace/name:tag".
-func isNameFromISTag(ref string) string {
+// Accepts "name:tag" and "namespace/name:tag". When a namespace prefix is present
+// it must match the scanned namespace; otherwise the reference is cross-namespace
+// and an empty string is returned.
+func isNameFromISTag(ref, namespace string) string {
 	if i := strings.LastIndex(ref, "/"); i >= 0 {
+		if ref[:i] != namespace {
+			return "" // embedded namespace doesn't match → cross-namespace
+		}
 		ref = ref[i+1:]
 	}
 	if i := strings.Index(ref, ":"); i >= 0 {
