@@ -65,12 +65,13 @@ func parse(src string, data []byte) (*Profile, error) {
 }
 
 // WorkloadMonthlyUSD returns the estimated monthly cost for a workload given
-// CPU cores and memory in GiB, assuming 730 hours per month.
-func (p *Profile) WorkloadMonthlyUSD(cpuCores, memGiB float64) float64 {
-	return (cpuCores*p.CPUCoreHour + memGiB*p.MemGBHour) * 730
+// CPU cores and memory in GB (decimal gigabytes, not GiB), assuming 730 hours per month.
+func (p *Profile) WorkloadMonthlyUSD(cpuCores, memGB float64) float64 {
+	return (cpuCores*p.CPUCoreHour + memGB*p.MemGBHour) * 730
 }
 
-// PVCMonthlyUSD returns the estimated monthly storage cost for a PVC of sizeGiB.
-func (p *Profile) PVCMonthlyUSD(sizeGiB float64) float64 {
-	return sizeGiB * p.PVCGBMonth
+// PVCMonthlyUSD returns the estimated monthly storage cost for a PVC of sizeGB
+// (decimal gigabytes, not GiB).
+func (p *Profile) PVCMonthlyUSD(sizeGB float64) float64 {
+	return sizeGB * p.PVCGBMonth
 }

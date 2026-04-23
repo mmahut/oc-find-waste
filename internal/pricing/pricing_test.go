@@ -90,7 +90,7 @@ func TestLoadNotFound(t *testing.T) {
 
 func TestPVCMonthlyUSD(t *testing.T) {
 	p, _ := pricing.Load("aws")
-	// 50 GiB * $0.08/GiB/month = $4.00
+	// 50 GB * $0.08/GB/month = $4.00
 	got := p.PVCMonthlyUSD(50)
 	want := 50 * 0.08
 	if math.Abs(got-want) > 0.001 {
@@ -100,7 +100,7 @@ func TestPVCMonthlyUSD(t *testing.T) {
 
 func TestWorkloadMonthlyUSD(t *testing.T) {
 	p, _ := pricing.Load("aws")
-	// 1 core, 2 GiB, 730h: (1*0.0416 + 2*0.0056) * 730
+	// 1 core, 2 GB, 730h: (1*0.0416 + 2*0.0056) * 730
 	got := p.WorkloadMonthlyUSD(1, 2)
 	want := (1*0.0416 + 2*0.0056) * 730
 	if math.Abs(got-want) > 0.001 {

@@ -131,8 +131,8 @@ func TestOrphanedPVCs_Cost(t *testing.T) {
 	if len(findings) != 1 {
 		t.Fatalf("got %d findings, want 1", len(findings))
 	}
-	// 50 GiB * $0.08/GiB/month = $4.00
-	want := 50 * 0.08
+	// 50 GiB = 53.687 GB; 53.687 GB * $0.08/GB/month ≈ $4.295
+	want := float64(50*(1<<30)) / 1e9 * 0.08
 	if math.Abs(findings[0].MonthlyCost-want) > 0.001 {
 		t.Errorf("MonthlyCost = %.4f, want %.4f", findings[0].MonthlyCost, want)
 	}

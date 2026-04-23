@@ -61,11 +61,11 @@ func (s *orphanedPVCsScanner) Scan(ctx context.Context, namespace string) ([]Fin
 			continue
 		}
 		storageQty := pvc.Spec.Resources.Requests[corev1.ResourceStorage]
-		sizeGiB := float64(storageQty.Value()) / (1 << 30)
+		sizeGB := float64(storageQty.Value()) / 1e9
 
 		var monthlyCost float64
 		if s.pricing != nil {
-			monthlyCost = s.pricing.PVCMonthlyUSD(sizeGiB)
+			monthlyCost = s.pricing.PVCMonthlyUSD(sizeGB)
 		}
 
 		findings = append(findings, Finding{

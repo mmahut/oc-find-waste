@@ -163,13 +163,13 @@ func (s *overProvisionedScanner) Scan(ctx context.Context, namespace string) ([]
 		var monthlyCost, savings float64
 		if s.pricing != nil {
 			wastedCPU := math.Max(0, o.reqCPU-sugCPU)
-			wastedMemGiB := math.Max(0, (o.reqMem-sugMem)/(1<<30))
-			costPerPod := s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGiB)
+			wastedMemGB := math.Max(0, (o.reqMem-sugMem)/1e9)
+			costPerPod := s.pricing.WorkloadMonthlyUSD(wastedCPU, wastedMemGB)
 			monthlyCost = costPerPod * float64(o.replicas)
 
 			if monthlyCost > 0 {
-				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(o.reqCPU, o.reqMem/(1<<30))
-				sugCostPerPod := s.pricing.WorkloadMonthlyUSD(sugCPU, sugMem/(1<<30))
+				reqCostPerPod := s.pricing.WorkloadMonthlyUSD(o.reqCPU, o.reqMem/1e9)
+				sugCostPerPod := s.pricing.WorkloadMonthlyUSD(sugCPU, sugMem/1e9)
 				savings = math.Max(0, reqCostPerPod-sugCostPerPod) * float64(o.replicas)
 				var savingsPct float64
 				if reqCostPerPod > 0 {
